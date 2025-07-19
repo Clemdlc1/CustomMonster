@@ -12,10 +12,12 @@ public class MonsterDamageListener implements Listener {
     public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
         // Nous récupérons l'attaquant.
         Entity damager = event.getDamager();
+        // Nous récupérons l'entité qui subit les dégâts.
+        Entity damaged = event.getEntity();
 
-        // Nous vérifions si l'attaquant est un monstre. [2]
-        if (damager instanceof Monster) {
-            // Si c'est un monstre, nous annulons l'événement. [9, 16]
+        // Nous vérifions si l'attaquant et la victime sont des monstres.
+        if (damager instanceof Monster && damaged instanceof Monster) {
+            // Si c'est le cas, nous annulons l'événement.
             event.setCancelled(true);
         }
     }

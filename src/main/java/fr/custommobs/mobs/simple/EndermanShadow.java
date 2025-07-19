@@ -40,7 +40,7 @@ public class EndermanShadow extends CustomMob {
 
     @Override
     protected void setDefaultStats() {
-        this.maxHealth = 50.0; // Plus résistant
+        this.maxHealth = 60.0; // Plus résistant
         this.damage = 7.0;     // Dégâts de base
         this.speed = 0.32;     // Très rapide
     }

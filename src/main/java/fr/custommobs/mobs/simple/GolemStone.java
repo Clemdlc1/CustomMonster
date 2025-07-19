@@ -37,8 +37,8 @@ public class GolemStone extends CustomMob {
 
     @Override
     protected void setDefaultStats() {
-        this.maxHealth = 120.0; // Encore plus tanky
-        this.damage = 15.0;
+        this.maxHealth = 100.0; // Encore plus tanky
+        this.damage = 12.0;
         this.speed = 0.22;
     }
 

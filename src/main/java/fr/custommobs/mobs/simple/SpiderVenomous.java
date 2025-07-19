@@ -37,7 +37,7 @@ public class SpiderVenomous extends CustomMob {
 
     @Override
     protected void setDefaultStats() {
-        this.maxHealth = 28.0; // Un peu plus robuste
+        this.maxHealth = 50.0; // Un peu plus robuste
         this.damage = 4.0;
         this.speed = 0.35;
     }

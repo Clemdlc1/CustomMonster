@@ -32,7 +32,7 @@ public class SkeletonArcher extends CustomMob {
 
     @Override
     protected void setDefaultStats() {
-        this.maxHealth = 30.0; // Santé légèrement augmentée
+        this.maxHealth = 35.0; // Santé légèrement augmentée
         this.damage = 0;       // Les dégâts sont gérés par les flèches
         this.speed = 0.25;
     }
@@ -94,12 +94,12 @@ public class SkeletonArcher extends CustomMob {
     }
 
     /**
-     * Attaque de base : un seul tir avec visée prédictive.
+     * Attaque de base : un seul tir avec visée améliorée.
      * @param target La cible du tir.
      */
     @Override
     public void attack(Player target) {
-        shootPredictiveArrow(target, 1.0, 0, null);
+        shootArrow(target, 1.0, 0, null);
     }
 
     /**
@@ -116,7 +116,7 @@ public class SkeletonArcher extends CustomMob {
                     return;
                 }
 
-                shootPredictiveArrow(target, 1.2, 0, null);
+                shootArrow(target, 1.2, 0, null);
                 arrowsFired++;
             }
         }.runTaskTimer(plugin, 0L, 5L); // Tire une flèche toutes les 5 ticks (0.25s)
@@ -128,7 +128,7 @@ public class SkeletonArcher extends CustomMob {
      */
     private void cripplingShot(Player target) {
         entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_SKELETON_HURT, 1.2f, 0.8f);
-        shootPredictiveArrow(target, 0.9, 4, PotionEffectType.SLOWNESS);
+        shootArrow(target, 0.9, 4, PotionEffectType.SLOWNESS);
     }
 
     /**
@@ -146,47 +146,54 @@ public class SkeletonArcher extends CustomMob {
     }
 
     /**
-     * Méthode centrale pour tirer une flèche avec visée prédictive.
+     * Méthode corrigée pour tirer une flèche avec visée améliorée.
      * @param target La cible.
      * @param speedMultiplier Multiplicateur de vitesse de la flèche.
      * @param powerLevel Niveau de l'enchantement "Power" de la flèche (0 pour aucun).
      * @param effectType L'effet de potion à appliquer sur la flèche (ou null).
      */
-    private void shootPredictiveArrow(Player target, double speedMultiplier, int powerLevel, PotionEffectType effectType) {
+    private void shootArrow(Player target, double speedMultiplier, int powerLevel, PotionEffectType effectType) {
         Location startLoc = entity.getEyeLocation();
         World world = startLoc.getWorld();
 
-        // --- Calcul de la visée prédictive ---
-        double distance = startLoc.distance(target.getEyeLocation());
-        double arrowSpeed = 2.0 * speedMultiplier;
-        double timeToTarget = distance / arrowSpeed;
+        // --- Direction de base vers la cible ---
+        Vector direction = target.getEyeLocation().subtract(startLoc).toVector();
+        double distance = direction.length();
+        direction.normalize();
 
-        // Position prédite de la cible
-        Vector predictedTargetPos = target.getEyeLocation().toVector().add(target.getVelocity().multiply(timeToTarget));
+        // --- Prédiction simple du mouvement ---
+        Vector targetVelocity = target.getVelocity();
+        double timeToTarget = distance / (2.0 * speedMultiplier); // Temps de vol estimé
 
-        // Direction vers la position prédite
-        Vector direction = predictedTargetPos.subtract(startLoc.toVector()).normalize();
+        // Ajustement prédictif seulement si le joueur bouge
+        if (targetVelocity.lengthSquared() > 0.01) {
+            Vector prediction = targetVelocity.clone().multiply(timeToTarget);
+            Location predictedLocation = target.getEyeLocation().add(prediction);
+            direction = predictedLocation.subtract(startLoc).toVector().normalize();
+        }
 
-        // --- Compensation de la gravité ---
-        // Une simple approximation qui fonctionne bien à moyenne portée
-        double gravityCompensation = timeToTarget * 0.15 * (distance / 10.0);
-        direction.setY(direction.getY() + gravityCompensation);
+        // --- Compensation de gravité simplifiée ---
+        double gravity = 0.05; // Constante de gravité pour les flèches
+        double yOffset = (gravity * timeToTarget * timeToTarget) / 2;
+        direction.setY(direction.getY() + yOffset);
 
         // --- Création et tir de la flèche ---
         Arrow arrow = world.spawn(startLoc, Arrow.class);
         arrow.setShooter(entity);
-        arrow.setVelocity(direction.multiply(arrowSpeed));
+        arrow.setVelocity(direction.multiply(2.0 * speedMultiplier));
         arrow.setPickupStatus(Arrow.PickupStatus.DISALLOWED);
 
-        if (powerLevel > 0) {
-            arrow.setDamage(arrow.getDamage() + (powerLevel * 0.5 + 0.5)); // Simule enchantement Power
-        }
+        // Configuration des dégâts
+        double baseDamage = 4.0 + (powerLevel * 1.25); // Dégâts de base + power
+        arrow.setDamage(baseDamage);
 
+        // Effet de potion si spécifié
         if (effectType != null) {
-            arrow.addCustomEffect(new PotionEffect(effectType, 100, 1), true); // 5s de ralentissement
+            arrow.addCustomEffect(new PotionEffect(effectType, 100, 1), true); // 5s d'effet
             arrow.setColor(Color.GRAY); // Couleur pour la distinguer
         }
 
+        // Son de tir
         world.playSound(startLoc, Sound.ENTITY_ARROW_SHOOT, 1.0f, 1.0f);
     }
 

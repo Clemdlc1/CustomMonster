@@ -1,11 +1,9 @@
-# config.yml
 # Configuration principale du plugin CustomMobs
 
 # Paramètres généraux
 general:
   # Langue du plugin (fr, en)
   language: "fr"
-
   # Activer les messages de debug
   debug: false
 
@@ -13,10 +11,8 @@ general:
 mob-control:
   # Désactiver le spawn naturel des monstres
   disable-natural-spawns: true
-
   # Supprimer les mobs inutiles (chauves-souris, calmars, etc.)
   remove-useless-mobs: true
-
   # Empêcher les mobs de détruire les blocs
   prevent-mob-grief: true
 
@@ -24,13 +20,10 @@ mob-control:
 custom-mobs:
   # Autoriser les monstres custom à détruire des blocs
   allow-block-damage: false
-
   # Multiplicateur de dégâts global
   damage-multiplier: 1.0
-
   # Multiplicateur de vie global
   health-multiplier: 1.0
-
   # Distance maximale de détection des joueurs
   detection-range: 16.0
 
@@ -83,7 +76,6 @@ spawn-zones:
     max-z: 400
     mob-types:
       - "golem_stone"
-      - "titan_earth"
     max-mobs: 8
     group-size: 1
     spawn-interval: 120
@@ -99,10 +91,10 @@ spawn-zones:
     max-y: 100
     max-z: 600
     mob-types:
-      - "dragon_fire"
-      - "necromancer_dark"
-      - "titan_earth"
-    max-mobs: 3
+      - "ravager_boss"
+      - "wither_boss"
+      - "warden_boss"
+    max-mobs: 1
     group-size: 1
     spawn-interval: 300  # 5 minutes
     enabled: false  # Désactivé par défaut
@@ -111,9 +103,14 @@ spawn-zones:
 loot-system:
   # Multiplicateur de chance global
   chance-multiplier: 1.0
-
   # Autoriser les loots vanilla en plus des custom
   allow-vanilla-drops: false
-
   # XP supplémentaire pour les monstres custom
   bonus-exp-multiplier: 1.5
+
+# Optimisation
+optimization:
+  # Nombre max de projectiles dans un monde
+  max-projectiles: 100
+  # Nombre max d'items au sol dans un monde
+  max-items: 200

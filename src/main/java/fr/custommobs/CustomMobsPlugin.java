@@ -10,6 +10,7 @@ import fr.custommobs.managers.LootManager;
 import fr.custommobs.managers.SpawnManager;
 import fr.custommobs.mobs.advanced.*;
 import fr.custommobs.mobs.simple.*;
+import fr.custommobs.mobs.boss.*;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class CustomMobsPlugin extends JavaPlugin {
@@ -75,6 +76,10 @@ public final class CustomMobsPlugin extends JavaPlugin {
         mobManager.registerMob("dragon_fire", DragonFire.class);
         mobManager.registerMob("necromancer_dark", NecromancerDark.class);
         mobManager.registerMob("geode_aberration", GeodeAberration.class);
+
+        mobManager.registerMob("wither_boss", WitherBoss.class);
+        mobManager.registerMob("warden_boss", WardenBoss.class);
+        mobManager.registerMob("ravager_boss", RavagerBoss.class);
     }
 
     private void registerCommands() {

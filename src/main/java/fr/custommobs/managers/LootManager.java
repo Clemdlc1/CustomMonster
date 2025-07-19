@@ -31,6 +31,7 @@ public class LootManager {
     public void addLoot(String mobId, ItemStack item, double chance) {
         mobLoots.computeIfAbsent(mobId.toLowerCase(), k -> new ArrayList<>())
                 .add(new LootEntry(item.clone(), chance));
+        plugin.getLogger().info("Loot ajouté pour " + mobId + ": " + item.getType() + " (chance: " + (chance * 100) + "%)");
     }
 
     /**
@@ -40,6 +41,7 @@ public class LootManager {
         List<LootEntry> loots = mobLoots.get(mobId.toLowerCase());
         if (loots != null && index >= 0 && index < loots.size()) {
             loots.remove(index);
+            plugin.getLogger().info("Loot supprimé pour " + mobId + " à l'index " + index);
             return true;
         }
         return false;
@@ -58,11 +60,25 @@ public class LootManager {
     public void dropLoots(LivingEntity entity, String mobId) {
         List<LootEntry> loots = getMobLoots(mobId);
 
+        if (loots.isEmpty()) {
+            plugin.getLogger().fine("Aucun loot configuré pour " + mobId);
+            return;
+        }
+
+        int droppedItems = 0;
+        double globalMultiplier = plugin.getConfig().getDouble("loot-system.chance-multiplier", 1.0);
+
         for (LootEntry loot : loots) {
-            if (Math.random() <= loot.getChance()) {
+            double finalChance = loot.getChance() * globalMultiplier;
+
+            if (Math.random() <= finalChance) {
                 entity.getWorld().dropItemNaturally(entity.getLocation(), loot.getItem());
+                droppedItems++;
+                plugin.getLogger().fine("Loot droppé pour " + mobId + ": " + loot.getItem().getType());
             }
         }
+
+        plugin.getLogger().fine("Loots générés pour " + mobId + ": " + droppedItems + "/" + loots.size());
     }
 
     /**
@@ -70,7 +86,8 @@ public class LootManager {
      */
     public void saveLootConfig() {
         try {
-            lootConfig.set("loots.yml", null); // Reset
+            // Nettoie la config
+            lootConfig.set("loots", null);
 
             for (Map.Entry<String, List<LootEntry>> entry : mobLoots.entrySet()) {
                 String mobId = entry.getKey();
@@ -89,6 +106,7 @@ public class LootManager {
             plugin.getLogger().info("Configuration des loots sauvegardée!");
         } catch (IOException e) {
             plugin.getLogger().severe("Erreur lors de la sauvegarde des loots: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
@@ -103,7 +121,7 @@ public class LootManager {
         lootConfig = YamlConfiguration.loadConfiguration(lootFile);
         mobLoots.clear();
 
-        ConfigurationSection lootsSection = lootConfig.getConfigurationSection("loots.yml");
+        ConfigurationSection lootsSection = lootConfig.getConfigurationSection("loots");
         if (lootsSection != null) {
             for (String mobId : lootsSection.getKeys(false)) {
                 ConfigurationSection mobSection = lootsSection.getConfigurationSection(mobId);
@@ -118,16 +136,20 @@ public class LootManager {
 
                             if (item != null) {
                                 loots.add(new LootEntry(item, chance));
+                                plugin.getLogger().fine("Loot chargé pour " + mobId + ": " + item.getType() + " (" + (chance * 100) + "%)");
                             }
                         }
                     }
 
-                    mobLoots.put(mobId, loots);
+                    if (!loots.isEmpty()) {
+                        mobLoots.put(mobId, loots);
+                        plugin.getLogger().info("Loots chargés pour " + mobId + ": " + loots.size() + " items");
+                    }
                 }
             }
         }
 
-        plugin.getLogger().info("Configuration des loots chargée!");
+        plugin.getLogger().info("Configuration des loots chargée! Total: " + mobLoots.size() + " monstres configurés");
     }
 
     /**
@@ -145,7 +167,7 @@ public class LootManager {
         private final double chance;
 
         public LootEntry(ItemStack item, double chance) {
-            this.item = item;
+            this.item = item.clone(); // Important: clone pour éviter les modifications
             this.chance = Math.max(0.0, Math.min(1.0, chance)); // Entre 0 et 1
         }
 
