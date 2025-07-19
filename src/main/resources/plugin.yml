@@ -1,0 +1,26 @@
+name: CustomMobs
+version: 1.0.0
+main: fr.custommobs.CustomMobsPlugin
+api-version: 1.21
+author: YourName
+description: Plugin pour ajouter des monstres custom optimisés
+depend: []
+softdepend: []
+
+commands:
+  lootconfig:
+    description: Configurer les loots des monstres
+    usage: /lootconfig <add|list|load|save> [args...]
+    permission: custommobs.admin
+  spawnmob:
+    description: Spawner un monstre custom
+    usage: /spawnmob <mob> [x] [y] [z]
+    permission: custommobs.spawn
+
+permissions:
+  custommobs.admin:
+    description: Administration du plugin
+    default: op
+  custommobs.spawn:
+    description: Spawner des monstres
+    default: op

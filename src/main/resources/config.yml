@@ -1,0 +1,119 @@
+# config.yml
+# Configuration principale du plugin CustomMobs
+
+# Paramètres généraux
+general:
+  # Langue du plugin (fr, en)
+  language: "fr"
+
+  # Activer les messages de debug
+  debug: false
+
+# Contrôle des mobs
+mob-control:
+  # Désactiver le spawn naturel des monstres
+  disable-natural-spawns: true
+
+  # Supprimer les mobs inutiles (chauves-souris, calmars, etc.)
+  remove-useless-mobs: true
+
+  # Empêcher les mobs de détruire les blocs
+  prevent-mob-grief: true
+
+# Paramètres des monstres custom
+custom-mobs:
+  # Autoriser les monstres custom à détruire des blocs
+  allow-block-damage: false
+
+  # Multiplicateur de dégâts global
+  damage-multiplier: 1.0
+
+  # Multiplicateur de vie global
+  health-multiplier: 1.0
+
+  # Distance maximale de détection des joueurs
+  detection-range: 16.0
+
+# Zones de spawn
+spawn-zones:
+  # Exemple de zone - Plaines dangereuses
+  dangerous_plains:
+    world: "world"
+    min-x: 100
+    min-y: 60
+    min-z: 100
+    max-x: 200
+    max-y: 80
+    max-z: 200
+    mob-types:
+      - "zombie_warrior"
+      - "skeleton_archer"
+      - "spider_venomous"
+    max-mobs: 15
+    group-size: 3
+    spawn-interval: 45  # en secondes
+    enabled: true
+
+  # Exemple de zone - Forêt sombre
+  dark_forest:
+    world: "world"
+    min-x: -150
+    min-y: 60
+    min-z: -150
+    max-x: -50
+    max-y: 90
+    max-z: -50
+    mob-types:
+      - "enderman_shadow"
+      - "witch_cursed"
+      - "creeper_explosive"
+    max-mobs: 12
+    group-size: 2
+    spawn-interval: 60
+    enabled: true
+
+  # Exemple de zone - Montagnes rocheuses
+  rocky_mountains:
+    world: "world"
+    min-x: 300
+    min-y: 80
+    min-z: 300
+    max-x: 400
+    max-y: 120
+    max-z: 400
+    mob-types:
+      - "golem_stone"
+      - "titan_earth"
+    max-mobs: 8
+    group-size: 1
+    spawn-interval: 120
+    enabled: true
+
+  # Exemple de zone - Boss Arena
+  boss_arena:
+    world: "world"
+    min-x: 500
+    min-y: 60
+    min-z: 500
+    max-x: 600
+    max-y: 100
+    max-z: 600
+    mob-types:
+      - "dragon_fire"
+      - "necromancer_dark"
+      - "titan_earth"
+    max-mobs: 3
+    group-size: 1
+    spawn-interval: 300  # 5 minutes
+    enabled: false  # Désactivé par défaut
+
+# Système de loots
+loot-system:
+  # Multiplicateur de chance global
+  chance-multiplier: 1.0
+
+  # Autoriser les loots vanilla en plus des custom
+  allow-vanilla-drops: false
+
+  # XP supplémentaire pour les monstres custom
+  bonus-exp-multiplier: 1.5
