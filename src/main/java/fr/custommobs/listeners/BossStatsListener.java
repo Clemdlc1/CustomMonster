@@ -8,7 +8,6 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
-import org.bukkit.event.entity.EntitySpawnEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 
 public class BossStatsListener implements Listener {
@@ -17,25 +16,6 @@ public class BossStatsListener implements Listener {
 
     public BossStatsListener(CustomMobsPlugin plugin) {
         this.plugin = plugin;
-    }
-
-    /**
-     * Gère l'apparition des boss pour démarrer le tracking
-     */
-    @EventHandler(priority = EventPriority.MONITOR)
-    public void onEntitySpawn(EntitySpawnEvent event) {
-        Entity entity = event.getEntity();
-
-        if (CustomMob.isCustomMob(entity) && entity instanceof LivingEntity) {
-            String mobId = CustomMob.getCustomMobId(entity);
-            LivingEntity livingEntity = (LivingEntity) entity;
-
-            // Démarre le tracking si c'est un boss
-            plugin.getBossStatsManager().startBossFight(livingEntity, mobId);
-
-            // Crée la barre de boss
-            plugin.getBossBarManager().checkAndCreateBossBar(livingEntity, mobId);
-        }
     }
 
     /**
@@ -160,10 +140,7 @@ public class BossStatsListener implements Listener {
      */
     private boolean isBoss(String mobId) {
         if (mobId == null) return false;
-        return mobId.contains("boss") ||
-                mobId.equals("necromancer_dark") ||
-                mobId.equals("dragon_fire") ||
-                mobId.equals("geode_aberration");
+        return mobId.contains("boss");
     }
 
     /**

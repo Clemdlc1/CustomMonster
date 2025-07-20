@@ -68,18 +68,14 @@ public class MobSpawnListener implements Listener {
     @EventHandler(priority = EventPriority.HIGH)
     public void onEntityDeath(EntityDeathEvent event) {
         LivingEntity entity = event.getEntity();
-
+        event.getDrops().clear();
+        event.setDroppedExp(0);
         // Vérifie si c'est un monstre custom
         if (!CustomMob.isCustomMob(entity)) {
             return;
         }
-
         String mobId = CustomMob.getCustomMobId(entity);
         if (mobId != null) {
-            // Efface les drops par défaut
-            event.getDrops().clear();
-            event.setDroppedExp(0);
-
             // Génère les loots custom
             plugin.getLootManager().dropLoots(entity, mobId);
 

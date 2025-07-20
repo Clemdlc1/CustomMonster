@@ -44,6 +44,7 @@ public class BossBarManager {
         }
 
         bossBars.put(entity, bossBar);
+        plugin.getLogger().info("Boss bar créée pour: " + name);
 
         // Démarre la mise à jour de la barre
         startBossBarUpdater(entity, bossBar);
@@ -57,6 +58,7 @@ public class BossBarManager {
         if (bossBar != null) {
             bossBar.removeAll();
             bossBars.remove(entity);
+            plugin.getLogger().fine("Boss bar supprimée pour l'entité: " + entity.getUniqueId());
         }
     }
 
@@ -124,36 +126,61 @@ public class BossBarManager {
     }
 
     /**
-     * Vérifie si une entité est un boss et crée automatiquement sa barre
+     * Vérifie si une entité est un boss et crée automatiquement sa barre - MÉTHODE CORRIGÉE
      */
     public void checkAndCreateBossBar(LivingEntity entity, String mobId) {
-        if (mobId.contains("boss")) {
-            String name = getBossDisplayName(mobId);
+        if (isBoss(mobId)) {
+            String name = getBossDisplayName(mobId, entity);
             BarColor color = getBossColor(mobId);
             createBossBar(entity, name, color);
+            plugin.getLogger().info("Boss bar auto-créée pour: " + mobId);
         }
     }
 
     /**
-     * Récupère le nom d'affichage du boss
+     * Vérifie si c'est un boss - MÉTHODE AMÉLIORÉE
      */
-    private String getBossDisplayName(String mobId) {
+    private boolean isBoss(String mobId) {
+        if (mobId == null) return false;
+
+        // Boss explicites
+        if (mobId.contains("boss")) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Récupère le nom d'affichage du boss - MÉTHODE AMÉLIORÉE
+     */
+    private String getBossDisplayName(String mobId, LivingEntity entity) {
+        // Utilise le nom custom de l'entité si disponible
+        if (entity.getCustomName() != null) {
+            return entity.getCustomName();
+        }
+
+        // Sinon utilise un nom basé sur l'ID
         return switch (mobId) {
             case "wither_boss" -> "§5§lArchliche Nécrosis";
             case "warden_boss" -> "§0§lGardien des Abysses";
             case "ravager_boss" -> "§c§lDévastateur Primordial";
+            case "necromancer_dark" -> "§5§lArchiliche";
+            case "dragon_fire" -> "§4§lDrake Cendré";
+            case "geode_aberration" -> "§d§lAberration Géodique";
             default -> "§6§lBoss Mystérieux";
         };
     }
 
     /**
-     * Récupère la couleur de la barre du boss
+     * Récupère la couleur de la barre du boss - MÉTHODE AMÉLIORÉE
      */
     private BarColor getBossColor(String mobId) {
         return switch (mobId) {
-            case "wither_boss" -> BarColor.PURPLE;
+            case "wither_boss", "necromancer_dark" -> BarColor.PURPLE;
             case "warden_boss" -> BarColor.BLUE;
-            case "ravager_boss" -> BarColor.RED;
+            case "ravager_boss", "dragon_fire" -> BarColor.RED;
+            case "geode_aberration" -> BarColor.PINK;
             default -> BarColor.WHITE;
         };
     }

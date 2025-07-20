@@ -42,27 +42,27 @@ public class NecromancerDark extends CustomMob {
 
     @Override
     public LivingEntity spawn(Location location) {
-        Illager illager = location.getWorld().spawn(location, Illager.class);
+        Evoker evoker = location.getWorld().spawn(location, Evoker.class);
 
-        illager.getEquipment().setItemInMainHand(new ItemStack(Material.NETHERITE_SWORD));
-        illager.getEquipment().setHelmet(new ItemStack(Material.WITHER_SKELETON_SKULL));
-        illager.getEquipment().setChestplate(new ItemStack(Material.NETHERITE_CHESTPLATE));
-        illager.getEquipment().setItemInMainHandDropChance(0.0f);
-        illager.getEquipment().setHelmetDropChance(0.0f);
-        illager.getEquipment().setChestplateDropChance(0.0f);
+        evoker.getEquipment().setItemInMainHand(new ItemStack(Material.NETHERITE_SWORD));
+        evoker.getEquipment().setHelmet(new ItemStack(Material.WITHER_SKELETON_SKULL));
+        evoker.getEquipment().setChestplate(new ItemStack(Material.NETHERITE_CHESTPLATE));
+        evoker.getEquipment().setItemInMainHandDropChance(0.0f);
+        evoker.getEquipment().setHelmetDropChance(0.0f);
+        evoker.getEquipment().setChestplateDropChance(0.0f);
 
-        illager.setCustomName("§5§lArchiliche");
-        illager.setCustomNameVisible(true);
-        illager.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, Integer.MAX_VALUE, 0, false, false));
+        evoker.setCustomName("§5§lArchiliche");
+        evoker.setCustomNameVisible(true);
+        evoker.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, Integer.MAX_VALUE, 0, false, false));
 
-        setupEntity(illager);
+        setupEntity(evoker);
         startDarkAura();
-        return illager;
+        return evoker;
     }
 
     @Override
     protected void onPlayerNear(Player target) {
-        ((Illager) entity).setTarget(target);
+        ((Evoker) entity).setTarget(target);
 
         if (isCasting || entity.isDead()) return;
 

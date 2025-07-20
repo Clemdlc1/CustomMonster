@@ -10,11 +10,27 @@ import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 
+import java.util.Random;
+
 public class SkeletonArcher extends CustomMob {
 
+    // --- Type de flèche pour une gestion claire ---
+    private enum ArrowType {
+        NORMAL,
+        CRIPPLING, // Incapacitante (ralentissement)
+        EXPLOSIVE,
+        FIRE
+    }
+
     // --- Cooldowns pour les capacités ---
-    private long lastVolleyShot = 0;
-    private final long VOLLEY_COOLDOWN = 8000; // 8 secondes
+    private long lastArrowRain = 0;
+    private final long ARROW_RAIN_COOLDOWN = 20000; // 20 secondes
+
+    private long lastExplosiveShot = 0;
+    private final long EXPLOSIVE_SHOT_COOLDOWN = 15000; // 15 secondes
+
+    private long lastFireShot = 0;
+    private final long FIRE_SHOT_COOLDOWN = 10000; // 10 secondes
 
     private long lastCripplingShot = 0;
     private final long CRIPPLING_COOLDOWN = 12000; // 12 secondes
@@ -23,8 +39,9 @@ public class SkeletonArcher extends CustomMob {
     private final long DISENGAGE_COOLDOWN = 6000; // 6 secondes
 
     // --- Constantes de comportement ---
-    private final double ENGAGE_DISTANCE = 20.0;
-    private final double MELEE_DISTANCE = 5.0; // Distance à laquelle il tente de reculer
+    private final double ENGAGE_DISTANCE = 25.0; // Augmentation de la portée d'engagement
+    private final double MELEE_DISTANCE = 5.0;   // Distance à laquelle il tente de reculer
+    private final Random random = new Random();
 
     public SkeletonArcher(CustomMobsPlugin plugin) {
         super(plugin, "skeleton_archer");
@@ -32,7 +49,7 @@ public class SkeletonArcher extends CustomMob {
 
     @Override
     protected void setDefaultStats() {
-        this.maxHealth = 35.0; // Santé légèrement augmentée
+        this.maxHealth = 40.0; // Santé augmentée pour correspondre à sa dangerosité
         this.damage = 0;       // Les dégâts sont gérés par les flèches
         this.speed = 0.25;
     }
@@ -42,14 +59,12 @@ public class SkeletonArcher extends CustomMob {
         Skeleton skeleton = location.getWorld().spawn(location, Skeleton.class);
 
         skeleton.getEquipment().setItemInMainHand(new ItemStack(Material.BOW));
-        skeleton.getEquipment().setHelmet(new ItemStack(Material.CHAINMAIL_HELMET)); // Équipement amélioré
+        skeleton.getEquipment().setHelmet(new ItemStack(Material.CHAINMAIL_HELMET));
         skeleton.getEquipment().setItemInMainHandDropChance(0.0f);
         skeleton.getEquipment().setHelmetDropChance(0.0f);
 
-        skeleton.setCustomName("§6§lArcher d'Élite");
+        skeleton.setCustomName("§c§lArcher Infernal");
         skeleton.setCustomNameVisible(true);
-
-        // Immunité au soleil
         skeleton.setShouldBurnInDay(false);
 
         setupEntity(skeleton);
@@ -76,59 +91,88 @@ public class SkeletonArcher extends CustomMob {
 
         // 2. Comportement offensif si le joueur est à bonne distance
         if (distance <= ENGAGE_DISTANCE && entity.hasLineOfSight(target)) {
-            // Priorise la Flèche Incapacitante si disponible
-            if (currentTime - lastCripplingShot > CRIPPLING_COOLDOWN) {
+            // Priorité aux attaques spéciales les plus puissantes
+            if (currentTime - lastArrowRain > ARROW_RAIN_COOLDOWN) {
+                arrowRain(target);
+                lastArrowRain = currentTime;
+            } else if (currentTime - lastExplosiveShot > EXPLOSIVE_SHOT_COOLDOWN) {
+                explosiveShot(target);
+                lastExplosiveShot = currentTime;
+            } else if (currentTime - lastCripplingShot > CRIPPLING_COOLDOWN) {
                 cripplingShot(target);
                 lastCripplingShot = currentTime;
-            }
-            // Sinon, lance une Rafale si disponible
-            else if (currentTime - lastVolleyShot > VOLLEY_COOLDOWN) {
-                volleyShot(target);
-                lastVolleyShot = currentTime;
-            }
-            // Sinon, effectue une attaque de base
-            else {
+            } else if (currentTime - lastFireShot > FIRE_SHOT_COOLDOWN) {
+                fireShot(target);
+                lastFireShot = currentTime;
+            } else {
+                // Attaque de base si aucune capacité n'est prête
                 attack(target);
             }
         }
     }
 
     /**
-     * Attaque de base : un seul tir avec visée améliorée.
-     * @param target La cible du tir.
+     * Attaque de base : un seul tir normal.
      */
     @Override
     public void attack(Player target) {
-        shootArrow(target, 1.0, 0, null);
+        shootCustomArrow(target, ArrowType.NORMAL, 1.5);
     }
 
     /**
-     * Capacité spéciale : Tire une rafale de 3 flèches.
-     * @param target La cible de la rafale.
+     * CAPACITÉ : Fait pleuvoir des flèches sur la cible.
      */
-    private void volleyShot(Player target) {
+    private void arrowRain(Player target) {
+        entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_GHAST_WARN, 1.5f, 1.0f);
+        Location targetLocation = target.getLocation();
+
         new BukkitRunnable() {
             int arrowsFired = 0;
             @Override
             public void run() {
-                if (arrowsFired >= 3 || entity.isDead() || target.isDead()) {
+                if (arrowsFired >= 15 || entity.isDead()) { // 15 flèches au total
                     cancel();
                     return;
                 }
+                // Fait apparaître les flèches dans un rayon de 4 blocs autour de la cible
+                double offsetX = (random.nextDouble() - 0.5) * 8;
+                double offsetZ = (random.nextDouble() - 0.5) * 8;
+                Location spawnLoc = targetLocation.clone().add(offsetX, 15, offsetZ);
 
-                shootArrow(target, 1.2, 0, null);
+                Arrow arrow = entity.getWorld().spawn(spawnLoc, Arrow.class);
+                arrow.setShooter(entity);
+                arrow.setVelocity(new Vector(0, -2, 0)); // Vitesse de chute
+                arrow.setDamage(5.0); // Dégâts par flèche de la pluie
+                arrow.setPickupStatus(Arrow.PickupStatus.DISALLOWED);
+
                 arrowsFired++;
             }
-        }.runTaskTimer(plugin, 0L, 5L); // Tire une flèche toutes les 5 ticks (0.25s)
+        }.runTaskTimer(plugin, 20L, 3L); // Délai initial de 1s, puis une flèche toutes les 0.15s
     }
 
     /**
-     * Capacité spéciale : Tire une flèche qui ralentit la cible.
-     * @param target La cible du tir.
+     * CAPACITÉ : Tire une flèche explosive.
+     */
+    private void explosiveShot(Player target) {
+        entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_CREEPER_PRIMED, 1.2f, 1.2f);
+        shootCustomArrow(target, ArrowType.EXPLOSIVE, 1.2);
+    }
+
+    /**
+     * CAPACITÉ : Tire une flèche enflammée.
+     */
+    private void fireShot(Player target) {
+        entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_BLAZE_SHOOT, 1.2f, 1.0f);
+        shootCustomArrow(target, ArrowType.FIRE, 1.4);
+    }
+
+
+    /**
+     * CAPACITÉ : Tire une flèche qui ralentit la cible.
      */
     private void cripplingShot(Player target) {
         entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_SKELETON_HURT, 1.2f, 0.8f);
-        shootArrow(target, 0.9, 4, PotionEffectType.SLOWNESS);
+        shootCustomArrow(target, ArrowType.CRIPPLING, 1.3);
     }
 
     /**
@@ -136,94 +180,108 @@ public class SkeletonArcher extends CustomMob {
      */
     private void disengageLeap() {
         Player target = findNearestPlayer(MELEE_DISTANCE + 2);
-        if (target == null) return; // Sécurité
+        if (target == null) return;
 
         Vector direction = entity.getLocation().toVector().subtract(target.getLocation().toVector()).normalize();
-        direction.setY(0.4); // Hauteur du saut
+        direction.setY(0.4);
 
-        entity.setVelocity(direction.multiply(1.2)); // Force du saut
+        entity.setVelocity(direction.multiply(1.2));
         entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_SKELETON_STEP, 1.0f, 0.8f);
     }
 
     /**
-     * Méthode corrigée pour tirer une flèche avec visée améliorée.
+     * Méthode centrale pour tirer tous les types de flèches.
+     * La trajectoire est désormais simple et directe.
+     *
      * @param target La cible.
+     * @param type Le type de flèche (NORMAL, EXPLOSIVE, etc.).
      * @param speedMultiplier Multiplicateur de vitesse de la flèche.
-     * @param powerLevel Niveau de l'enchantement "Power" de la flèche (0 pour aucun).
-     * @param effectType L'effet de potion à appliquer sur la flèche (ou null).
      */
-    private void shootArrow(Player target, double speedMultiplier, int powerLevel, PotionEffectType effectType) {
+    private void shootCustomArrow(Player target, ArrowType type, double speedMultiplier) {
+        if (entity.isDead() || target.isDead() || !target.isOnline()) {
+            return;
+        }
+
         Location startLoc = entity.getEyeLocation();
         World world = startLoc.getWorld();
 
-        // --- Direction de base vers la cible ---
-        Vector direction = target.getEyeLocation().subtract(startLoc).toVector();
-        double distance = direction.length();
+        // Direction simple vers la cible
+        Vector direction = target.getEyeLocation().subtract(startLoc).toVector().normalize();
 
-        // Vérification de sécurité
-        if (distance == 0 || direction.lengthSquared() == 0) {
-            return; // Évite les divisions par zéro
-        }
-
-        direction.normalize();
-
-        // --- Prédiction améliorée du mouvement ---
-        Vector targetVelocity = target.getVelocity();
-        double arrowSpeed = 3.0 * speedMultiplier; // Vitesse réaliste de flèche
-        double timeToTarget = distance / arrowSpeed;
-
-        // Limite le temps de prédiction pour éviter les tirs impossibles
-        timeToTarget = Math.min(timeToTarget, 2.0);
-
-        // Prédiction de position seulement si le joueur bouge significativement
-        if (targetVelocity.lengthSquared() > 0.1) {
-            Vector prediction = targetVelocity.clone().multiply(timeToTarget * 0.8); // Facteur de correction
-            Location predictedLocation = target.getEyeLocation().add(prediction);
-
-            // Vérifie que la position prédite n'est pas trop loin
-            if (predictedLocation.distance(startLoc) <= distance * 1.5) {
-                direction = predictedLocation.subtract(startLoc).toVector();
-                if (direction.lengthSquared() > 0) {
-                    direction.normalize();
-                }
-            }
-        }
-
-        // --- Compensation de gravité simplifiée ---
-        if (distance > 5) { // Seulement pour les tirs à distance
-            double gravityCompensation = (distance * distance) / (arrowSpeed * arrowSpeed * 20);
-            direction.setY(direction.getY() + Math.min(gravityCompensation, 0.3)); // Limite la compensation
-        }
-
-        // --- Création et tir de la flèche ---
+        // Création et tir de la flèche
         Arrow arrow = world.spawn(startLoc, Arrow.class);
         arrow.setShooter(entity);
-
-        // Vitesse finale de la flèche
-        Vector finalVelocity = direction.multiply(arrowSpeed);
-        arrow.setVelocity(finalVelocity);
+        arrow.setVelocity(direction.multiply(speedMultiplier * 1.5)); // Ajustement de la vitesse de base
         arrow.setPickupStatus(Arrow.PickupStatus.DISALLOWED);
 
-        // Configuration des dégâts
-        double baseDamage = 4.0 + (powerLevel * 1.25);
-        arrow.setDamage(baseDamage);
+        // Appliquer les effets spéciaux en fonction du type
+        switch (type) {
+            case CRIPPLING:
+                arrow.addCustomEffect(new PotionEffect(PotionEffectType.SLOWNESS, 100, 1), true); // 5s de ralentissement
+                arrow.setColor(Color.GRAY);
+                arrow.setDamage(4.0);
+                break;
 
-        // Effet de potion si spécifié
-        if (effectType != null) {
-            arrow.addCustomEffect(new PotionEffect(effectType, 100, 1), true);
-            arrow.setColor(Color.GRAY);
+            case FIRE:
+                arrow.setFireTicks(100); // Enflamme la cible pour 5 secondes
+                arrow.setDamage(5.0);
+                // Ajout d'un effet visuel pour la flèche
+                addParticleTrail(arrow, Particle.FLAME);
+                break;
+
+            case EXPLOSIVE:
+                arrow.setDamage(2.0); // La flèche elle-même fait peu de dégâts, l'explosion fait le reste
+                // Ajout d'un effet visuel
+                addParticleTrail(arrow, Particle.SMOKE);
+                // Crée une explosion à l'impact
+                handleExplosiveImpact(arrow);
+                break;
+
+            case NORMAL:
+            default:
+                arrow.setDamage(6.0); // Dégâts de base
+                break;
         }
 
-        // Son de tir
         world.playSound(startLoc, Sound.ENTITY_ARROW_SHOOT, 1.0f, 1.0f);
+    }
+
+    /**
+     * Ajoute un effet de particule qui suit la flèche.
+     */
+    private void addParticleTrail(Arrow arrow, Particle particle) {
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (arrow.isDead() || arrow.isOnGround() || !arrow.isValid()) {
+                    cancel();
+                    return;
+                }
+                arrow.getWorld().spawnParticle(particle, arrow.getLocation(), 1, 0, 0, 0, 0);
+            }
+        }.runTaskTimer(plugin, 0L, 1L); // Particule à chaque tick
+    }
+
+    /**
+     * Gère l'impact d'une flèche explosive.
+     */
+    private void handleExplosiveImpact(Arrow arrow) {
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (arrow.isDead() || arrow.isOnGround() || !arrow.isValid()) {
+                    // Crée une explosion non-destructrice pour les blocs
+                    arrow.getWorld().createExplosion(arrow.getLocation(), 2.0f, false, false);
+                    cancel();
+                }
+            }
+        }.runTaskTimer(plugin, 0L, 1L); // Vérifie l'état de la flèche à chaque tick
     }
 
     @Override
     public void specialAbility(Player target) {
-        // Cette méthode est désormais gérée par la logique de `onPlayerNear`
-        // mais on peut l'utiliser pour un déclenchement alternatif
-        if (Math.random() < 0.2) { // 20% de chance
-            volleyShot(target);
-        }
+        // La logique est maintenant entièrement gérée dans onPlayerNear
+        // On peut la laisser vide ou la lier à une attaque aléatoire pour des déclenchements externes.
+        fireShot(target);
     }
 }

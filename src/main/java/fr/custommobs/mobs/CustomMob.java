@@ -76,6 +76,28 @@ public abstract class CustomMob {
 
         // Lance les comportements périodiques
         startBehaviors();
+        if (isBoss(mobId)) {
+            // NOUVEAU: Notifie les managers que l'entité est prête
+            notifyManagers();
+        }
+    }
+
+    public boolean isBoss(String mobId) {
+        if (mobId == null) return false;
+        return mobId.contains("boss");
+    }
+
+    /**
+     * Notifie les managers qu'un custom mob a été spawné (NOUVEAU)
+     */
+    private void notifyManagers() {
+        // Démarre le tracking si c'est un boss
+        plugin.getBossStatsManager().startBossFight(entity, mobId);
+
+        // Crée la barre de boss
+        plugin.getBossBarManager().checkAndCreateBossBar(entity, mobId);
+
+        plugin.getLogger().fine("Custom mob notifié aux managers: " + mobId);
     }
 
     /**

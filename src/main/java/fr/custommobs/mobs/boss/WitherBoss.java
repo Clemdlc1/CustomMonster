@@ -9,9 +9,7 @@ import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class WitherBoss extends CustomMob {
@@ -19,6 +17,8 @@ public class WitherBoss extends CustomMob {
     private final Random random = new Random();
     private final List<LivingEntity> summonedUndead = new ArrayList<>();
     private final List<LivingEntity> soulOrbs = new ArrayList<>();
+    private final Map<Player, Double> playerThreat = new HashMap<>();
+    private final Map<Player, Integer> playerCurses = new HashMap<>();
 
     // --- ÉTAT DU BOSS ---
     private BossPhase currentPhase = BossPhase.AWAKENING;
@@ -26,29 +26,24 @@ public class WitherBoss extends CustomMob {
     private boolean isChanneling = false;
     private int necroticStacks = 0;
     private Location altarLocation;
+    private int activePlayerCount = 0;
+    private long lastTargetSwitch = 0;
 
-    // --- COOLDOWNS ---
+    // --- COOLDOWNS ADAPTATIFS ---
     private long lastSkullBarrage = 0;
-    private final long SKULL_BARRAGE_COOLDOWN = 15000; // 15s
-
     private long lastSoulDrain = 0;
-    private final long SOUL_DRAIN_COOLDOWN = 20000; // 20s
-
     private long lastNecromancy = 0;
-    private final long NECROMANCY_COOLDOWN = 30000; // 30s
-
     private long lastWitherShield = 0;
-    private final long WITHER_SHIELD_COOLDOWN = 45000; // 45s
-
     private long lastApocalypse = 0;
-    private final long APOCALYPSE_COOLDOWN = 60000; // 60s
+    private long lastCurseStorm = 0;
+    private final long CURSE_STORM_COOLDOWN = 18000; // 18s
 
     private enum BossPhase {
         AWAKENING,  // 0-15s : Invulnérable, setup arena
-        PHASE_1,    // 100-75% HP : Attaques aériennes
-        PHASE_2,    // 75-40% HP : Invocations + Shield
-        PHASE_3,    // 40-15% HP : Attaques dévastatrices
-        DEATH_THROES // 15-0% HP : Explosions finales
+        PHASE_1,    // 100-75% HP : Attaques aériennes multiples
+        PHASE_2,    // 75-40% HP : Invocations + Shield + Malédictions
+        PHASE_3,    // 40-15% HP : Attaques dévastatrices coordonnées
+        DEATH_THROES // 15-0% HP : Explosions finales multiples
     }
 
     public WitherBoss(CustomMobsPlugin plugin) {
@@ -69,7 +64,6 @@ public class WitherBoss extends CustomMob {
         wither.setCustomName("§5§l§k⚡§r §d§lARCHLICHE NÉCROSIS §5§l§k⚡§r");
         wither.setCustomNameVisible(true);
 
-        // Immunités de boss
         wither.addPotionEffect(new PotionEffect(PotionEffectType.FIRE_RESISTANCE, Integer.MAX_VALUE, 0, false, false));
         wither.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, Integer.MAX_VALUE, 1, false, false));
 
@@ -85,116 +79,208 @@ public class WitherBoss extends CustomMob {
     protected void onPlayerNear(Player target) {
         if (entity.isDead()) return;
 
+        List<Player> nearbyPlayers = getNearbyPlayers(35);
+        activePlayerCount = nearbyPlayers.size();
+
+        updateThreatLevels(nearbyPlayers);
         updatePhase();
         cleanupMinions();
 
         long currentTime = System.currentTimeMillis();
-        double distance = entity.getLocation().distance(target.getLocation());
-        List<Player> nearbyPlayers = getNearbyPlayers(30);
 
-        // Ciblage intelligent - vise le joueur le plus proche mais change parfois
-        if (Math.random() < 0.1) { // 10% de chance de changer de cible
-            Player newTarget = findRandomTarget(nearbyPlayers);
-            if (newTarget != null) target = newTarget;
-        }
+        // === SYSTÈME DE CIBLAGE MULTIJOUEUR INTELLIGENT ===
+        Player primaryTarget = selectOptimalTarget(nearbyPlayers, currentTime);
+        if (primaryTarget == null) primaryTarget = target;
 
-        ((Wither) entity).setTarget(target);
+        ((Wither) entity).setTarget(primaryTarget);
 
-        // === IA BASÉE SUR LES PHASES ===
+        double distance = entity.getLocation().distance(primaryTarget.getLocation());
+
+        // === IA MULTIJOUEUR ADAPTATIVE ===
         switch (currentPhase) {
             case AWAKENING:
                 // Invulnérable pendant l'éveil
                 break;
             case PHASE_1:
-                handlePhase1(target, distance, currentTime, nearbyPlayers);
+                handlePhase1Multiplayer(primaryTarget, distance, currentTime, nearbyPlayers);
                 break;
             case PHASE_2:
-                handlePhase2(target, distance, currentTime, nearbyPlayers);
+                handlePhase2Multiplayer(primaryTarget, distance, currentTime, nearbyPlayers);
                 break;
             case PHASE_3:
-                handlePhase3(target, distance, currentTime, nearbyPlayers);
+                handlePhase3Multiplayer(primaryTarget, distance, currentTime, nearbyPlayers);
                 break;
             case DEATH_THROES:
-                handleDeathThroes(target, distance, currentTime, nearbyPlayers);
+                handleDeathThroesMultiplayer(primaryTarget, distance, currentTime, nearbyPlayers);
                 break;
+        }
+
+        // Attaques secondaires sur d'autres joueurs (25% de chance)
+        if (nearbyPlayers.size() > 1 && Math.random() < 0.25) {
+            executeSecondaryAttacks(nearbyPlayers, primaryTarget);
         }
     }
 
-    private void handlePhase1(Player target, double distance, long currentTime, List<Player> players) {
-        // Phase 1 : Attaques aériennes classiques
-        if (currentTime - lastSkullBarrage > SKULL_BARRAGE_COOLDOWN) {
-            if (players.size() > 1) {
+    private void handlePhase1Multiplayer(Player target, double distance, long currentTime, List<Player> players) {
+        // Cooldowns adaptatifs selon le nombre de joueurs
+        long barrageCD = Math.max(10000, 15000 - (players.size() * 1000));
+        long drainCD = Math.max(15000, 20000 - (players.size() * 1000));
+
+        if (players.size() >= 3 && currentTime - lastCurseStorm > CURSE_STORM_COOLDOWN) {
+            curseStormMultiplayer(players);
+        } else if (currentTime - lastSkullBarrage > barrageCD) {
+            if (players.size() > 2) {
+                skullBarrageCoordinated(players);
+            } else if (players.size() > 1) {
                 skullBarrageMulti(players);
             } else {
                 skullBarrageSingle(target);
             }
-        } else if (distance > 15 && currentTime - lastSoulDrain > SOUL_DRAIN_COOLDOWN) {
-            soulDrain(target);
+        } else if (distance > 15 && currentTime - lastSoulDrain > drainCD) {
+            if (players.size() > 1) {
+                soulDrainArea(players);
+            } else {
+                soulDrain(target);
+            }
         } else {
-            // Attaque de base : têtes explosives
             attack(target);
         }
 
-        // Maintient une altitude élevée
-        maintainFlightAltitude(15);
+        maintainFlightAltitude(15 + players.size() * 2); // Plus haut avec plus de joueurs
     }
 
-    private void handlePhase2(Player target, double distance, long currentTime, List<Player> players) {
-        // Phase 2 : Invocations et protection
-        if (!isShielded && currentTime - lastWitherShield > WITHER_SHIELD_COOLDOWN) {
+    private void handlePhase2Multiplayer(Player target, double distance, long currentTime, List<Player> players) {
+        // Cooldowns réduits et plus agressif
+        long shieldCD = Math.max(35000, 45000 - (players.size() * 2000));
+        long necroCD = Math.max(20000, 30000 - (players.size() * 2000));
+
+        if (!isShielded && currentTime - lastWitherShield > shieldCD) {
             activateWitherShield();
         }
 
         cleanupMinions();
-        if (summonedUndead.size() < 4 && currentTime - lastNecromancy > NECROMANCY_COOLDOWN) {
-            massNecromancy();
-        } else if (currentTime - lastSkullBarrage > (SKULL_BARRAGE_COOLDOWN * 0.7)) {
-            skullBarrageArea(players);
+        int maxMinions = Math.min(players.size() + 2, 8);
+        if (summonedUndead.size() < maxMinions && currentTime - lastNecromancy > necroCD) {
+            massNecromancyAdaptive(players);
+        } else if (currentTime - lastSkullBarrage > 10000) {
+            skullBarrageOmnidirectional(players);
         } else if (distance > 20) {
             teleportToArena();
         } else {
             attack(target);
         }
 
-        maintainFlightAltitude(20);
+        maintainFlightAltitude(20 + players.size() * 2);
     }
 
-    private void handlePhase3(Player target, double distance, long currentTime, List<Player> players) {
-        // Phase 3 : Attaques dévastatrices
-        if (currentTime - lastApocalypse > APOCALYPSE_COOLDOWN && players.size() > 0) {
-            necroticApocalypse(players);
-        } else if (currentTime - lastSoulDrain > (SOUL_DRAIN_COOLDOWN * 0.6)) {
-            soulDrainArea(players);
-        } else if (currentTime - lastSkullBarrage > (SKULL_BARRAGE_COOLDOWN * 0.5)) {
-            skullBarrageHoming(target);
+    private void handlePhase3Multiplayer(Player target, double distance, long currentTime, List<Player> players) {
+        // Phase dévastatrice - attaques coordonnées
+        long apocalypseCD = Math.max(45000, 60000 - (players.size() * 3000));
+
+        if (currentTime - lastApocalypse > apocalypseCD && players.size() > 0) {
+            necroticApocalypseMultiplayer(players);
+        } else if (currentTime - lastSoulDrain > 12000) {
+            soulDrainOmnipresent(players);
+        } else if (currentTime - lastSkullBarrage > 8000) {
+            skullBarrageDevastating(players);
         } else {
-            // Attaque renforcée
             attack(target);
         }
 
-        maintainFlightAltitude(25);
+        maintainFlightAltitude(25 + players.size() * 3);
     }
 
-    private void handleDeathThroes(Player target, double distance, long currentTime, List<Player> players) {
-        // Phase finale : Explosions désespérées
+    private void handleDeathThroesMultiplayer(Player target, double distance, long currentTime, List<Player> players) {
         if (!isChanneling) {
-            finalExplosionSequence();
+            finalExplosionSequenceMultiplayer(players);
         }
+    }
+
+    // === SYSTÈME D'AGGRO ET CIBLAGE ===
+
+    private void updateThreatLevels(List<Player> players) {
+        for (Player player : players) {
+            double currentThreat = playerThreat.getOrDefault(player, 0.0);
+            playerThreat.put(player, Math.max(0, currentThreat * 0.98)); // Déclin plus lent
+        }
+    }
+
+    private Player selectOptimalTarget(List<Player> players, long currentTime) {
+        if (players.isEmpty()) return null;
+
+        // Change de cible plus fréquemment en multijoueur
+        boolean shouldSwitch = currentTime - lastTargetSwitch > (players.size() > 2 ? 6000 : 10000) ||
+                Math.random() < (players.size() * 0.05); // Plus de chance avec plus de joueurs
+
+        if (!shouldSwitch && lastTargetSwitch > 0) {
+            return players.stream()
+                    .filter(p -> ((Wither) entity).getTarget() != null &&
+                            ((Wither) entity).getTarget().equals(p))
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        lastTargetSwitch = currentTime;
+
+        return players.stream()
+                .max((p1, p2) -> {
+                    double score1 = calculateTargetPriority(p1);
+                    double score2 = calculateTargetPriority(p2);
+                    return Double.compare(score1, score2);
+                })
+                .orElse(players.get(random.nextInt(players.size())));
+    }
+
+    private double calculateTargetPriority(Player player) {
+        double priority = 0;
+
+        // Distance inversée (plus proche = plus de priorité)
+        double distance = entity.getLocation().distance(player.getLocation());
+        priority += Math.max(0, 40 - distance);
+
+        // Niveau d'aggro
+        priority += playerThreat.getOrDefault(player, 0.0) * 3;
+
+        // Priorité aux joueurs avec moins de vie (prédateur)
+        priority += (1.0 - (player.getHealth() / player.getMaxHealth())) * 30;
+
+        // Bonus si le joueur a beaucoup de malédictions
+        priority += playerCurses.getOrDefault(player, 0) * 8;
+
+        // Facteur aléatoire pour imprévisibilité
+        priority += random.nextDouble() * 15;
+
+        return priority;
+    }
+
+    private void increaseThreat(Player player, double amount) {
+        double currentThreat = playerThreat.getOrDefault(player, 0.0);
+        playerThreat.put(player, currentThreat + amount);
+    }
+
+    private void addCurse(Player player) {
+        int currentCurses = playerCurses.getOrDefault(player, 0);
+        playerCurses.put(player, currentCurses + 1);
     }
 
     @Override
     public void attack(Player target) {
-        // Attaque de base : Tête explosive avec effet Wither
         if (entity instanceof Wither wither) {
-            // Simule le tir de tête explosive
-            WitherSkull skull = wither.launchProjectile(WitherSkull.class);
-            skull.setDirection(target.getEyeLocation().subtract(entity.getEyeLocation()).toVector().normalize());
-            skull.setCharged(currentPhase == BossPhase.PHASE_3 || currentPhase == BossPhase.DEATH_THROES);
-            skull.setShooter(entity);
+            // Attaque adaptée au nombre de joueurs
+            if (activePlayerCount > 2 && Math.random() < 0.4) {
+                // Attaque de zone
+                createNecroticExplosion(target.getLocation());
+            } else {
+                // Attaque ciblée
+                WitherSkull skull = wither.launchProjectile(WitherSkull.class);
+                skull.setDirection(target.getEyeLocation().subtract(entity.getEyeLocation()).toVector().normalize());
+                skull.setCharged(currentPhase == BossPhase.PHASE_3 || currentPhase == BossPhase.DEATH_THROES);
+                skull.setShooter(entity);
+            }
 
             entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_WITHER_SHOOT, 1.5f, 0.8f);
 
-            // Ajoute un effet nécrotique
+            increaseThreat(target, 5);
             necroticStacks++;
             if (necroticStacks >= 5) {
                 createNecroticExplosion(target.getLocation());
@@ -203,280 +289,280 @@ public class WitherBoss extends CustomMob {
         }
     }
 
-    /**
-     * Barrage de têtes sur un seul joueur
-     */
-    private void skullBarrageSingle(Player target) {
-        isChanneling = true;
-        lastSkullBarrage = System.currentTimeMillis();
+    private void executeSecondaryAttacks(List<Player> players, Player primaryTarget) {
+        List<Player> secondaryTargets = players.stream()
+                .filter(p -> !p.equals(primaryTarget))
+                .collect(Collectors.toList());
 
-        entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_WITHER_AMBIENT, 2.0f, 0.5f);
+        if (secondaryTargets.size() >= 1) {
+            Player secondary = secondaryTargets.get(random.nextInt(secondaryTargets.size()));
 
-        new BukkitRunnable() {
-            int skulls = 0;
-            @Override
-            public void run() {
-                if (skulls >= 8 || entity.isDead() || target.isDead()) {
-                    isChanneling = false;
-                    cancel();
-                    return;
-                }
-
-                // Prédiction de mouvement
-                Vector prediction = target.getVelocity().multiply(20);
-                Location targetLoc = target.getLocation().add(prediction);
-
+            if (Math.random() < 0.6) {
+                // Projectile nécrotique
                 WitherSkull skull = entity.getWorld().spawn(entity.getEyeLocation(), WitherSkull.class);
-                skull.setDirection(targetLoc.subtract(entity.getEyeLocation()).toVector().normalize());
+                skull.setDirection(secondary.getEyeLocation().subtract(entity.getEyeLocation()).toVector().normalize());
                 skull.setShooter(entity);
-                skull.setCharged(currentPhase == BossPhase.PHASE_3);
-
-                entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_WITHER_SHOOT, 1.0f, 1.2f);
-                skulls++;
+                skull.setCharged(false);
+            } else {
+                // Malédiction à distance
+                applyCurseToPlayer(secondary);
             }
-        }.runTaskTimer(plugin, 0L, 8L); // Toutes les 0.4s
+        }
     }
 
-    /**
-     * Barrage de têtes sur plusieurs joueurs
-     */
-    private void skullBarrageMulti(List<Player> targets) {
-        isChanneling = true;
-        lastSkullBarrage = System.currentTimeMillis();
+    // === NOUVELLES ATTAQUES MULTIJOUEUR ===
 
-        entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_WITHER_AMBIENT, 2.0f, 0.3f);
+    private void curseStormMultiplayer(List<Player> players) {
+        isChanneling = true;
+        lastCurseStorm = System.currentTimeMillis();
+
+        Bukkit.broadcastMessage("§5§l[BOSS] §dL'Archliche déchaîne une tempête de malédictions !");
+        entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_ELDER_GUARDIAN_CURSE, 3.0f, 0.5f);
 
         new BukkitRunnable() {
             int wave = 0;
             @Override
             public void run() {
-                if (wave >= 4 || entity.isDead()) {
+                if (wave >= 5 || entity.isDead()) {
                     isChanneling = false;
                     cancel();
                     return;
                 }
 
-                for (Player target : targets) {
+                // Frappe chaque joueur avec des malédictions rotatives
+                for (int i = 0; i < players.size(); i++) {
+                    Player player = players.get(i);
+                    if (player.isDead()) continue;
+
+                    new BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            createCurseVortex(player.getLocation());
+                            applyCurseToPlayer(player);
+                        }
+                    }.runTaskLater(plugin, i * 5L); // Décalage temporel
+                }
+
+                wave++;
+            }
+        }.runTaskTimer(plugin, 0L, 25L); // Toutes les 1.25s
+    }
+
+    private void skullBarrageCoordinated(List<Player> players) {
+        isChanneling = true;
+        lastSkullBarrage = System.currentTimeMillis();
+
+        entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_WITHER_AMBIENT, 3.0f, 0.3f);
+        Bukkit.broadcastMessage("§5§l[BOSS] §dBarrage coordonné imminent !");
+
+        // Phase 1 : Marquage des cibles
+        for (Player player : players) {
+            drawTargetingBeam(entity.getEyeLocation(), player.getEyeLocation());
+        }
+
+        new BukkitRunnable() {
+            int salvo = 0;
+            @Override
+            public void run() {
+                if (salvo >= 6 || entity.isDead()) {
+                    isChanneling = false;
+                    cancel();
+                    return;
+                }
+
+                // Alterne entre les joueurs
+                for (int i = 0; i < players.size(); i++) {
+                    Player target = players.get(i);
                     if (target.isDead()) continue;
 
+                    // Délai progressif pour chaque joueur
+                    new BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            fireTrackingSkull(target, salvo % 2 == 0); // Alterne têtes bleues/noires
+                        }
+                    }.runTaskLater(plugin, i * 3L);
+                }
+
+                salvo++;
+            }
+        }.runTaskTimer(plugin, 40L, 15L); // Délai initial puis toutes les 0.75s
+    }
+
+    private void skullBarrageOmnidirectional(List<Player> players) {
+        isChanneling = true;
+        lastSkullBarrage = System.currentTimeMillis();
+
+        entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 2.5f, 0.4f);
+
+        new BukkitRunnable() {
+            int burst = 0;
+            @Override
+            public void run() {
+                if (burst >= 8 || entity.isDead()) {
+                    isChanneling = false;
+                    cancel();
+                    return;
+                }
+
+                // Barrage omnidirectionnel avec focus sur les joueurs
+                for (int angle = 0; angle < 360; angle += 45) {
+                    Vector direction = new Vector(
+                            Math.cos(Math.toRadians(angle)),
+                            -0.2,
+                            Math.sin(Math.toRadians(angle))
+                    ).normalize();
+
                     WitherSkull skull = entity.getWorld().spawn(entity.getEyeLocation(), WitherSkull.class);
-                    Vector direction = target.getEyeLocation().subtract(entity.getEyeLocation()).toVector().normalize();
                     skull.setDirection(direction);
                     skull.setShooter(entity);
                     skull.setCharged(false);
                 }
 
-                entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_WITHER_SHOOT, 1.0f, 0.8f);
-                wave++;
-            }
-        }.runTaskTimer(plugin, 0L, 15L); // Toutes les 0.75s
-    }
-
-    /**
-     * Barrage de zone sur une area
-     */
-    private void skullBarrageArea(List<Player> targets) {
-        isChanneling = true;
-        lastSkullBarrage = System.currentTimeMillis();
-
-        // Calcule le centre du groupe
-        Vector center = new Vector();
-        for (Player p : targets) {
-            center.add(p.getLocation().toVector());
-        }
-        Location targetArea = center.multiply(1.0 / targets.size()).toLocation(entity.getWorld());
-
-        entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 2.0f, 0.5f);
-
-        new BukkitRunnable() {
-            int skulls = 0;
-            @Override
-            public void run() {
-                if (skulls >= 15 || entity.isDead()) {
-                    isChanneling = false;
-                    cancel();
-                    return;
-                }
-
-                // Cible aléatoirement autour de la zone
-                Location randomTarget = targetArea.clone().add(
-                        (random.nextDouble() - 0.5) * 16,
-                        random.nextDouble() * 5,
-                        (random.nextDouble() - 0.5) * 16
-                );
-
-                WitherSkull skull = entity.getWorld().spawn(entity.getEyeLocation(), WitherSkull.class);
-                skull.setDirection(randomTarget.subtract(entity.getEyeLocation()).toVector().normalize());
-                skull.setShooter(entity);
-                skull.setCharged(Math.random() < 0.3); // 30% de têtes bleues
-
-                skulls++;
-            }
-        }.runTaskTimer(plugin, 0L, 4L); // Toutes les 0.2s
-    }
-
-    /**
-     * Têtes à tête chercheuse (Phase 3)
-     */
-    private void skullBarrageHoming(Player target) {
-        isChanneling = true;
-        lastSkullBarrage = System.currentTimeMillis();
-
-        entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_WITHER_HURT, 2.0f, 0.3f);
-
-        new BukkitRunnable() {
-            int skulls = 0;
-            @Override
-            public void run() {
-                if (skulls >= 6 || entity.isDead() || target.isDead()) {
-                    isChanneling = false;
-                    cancel();
-                    return;
-                }
-
-                // Crée des têtes qui suivent le joueur
-                WitherSkull skull = entity.getWorld().spawn(entity.getEyeLocation(), WitherSkull.class);
-                skull.setDirection(target.getEyeLocation().subtract(entity.getEyeLocation()).toVector().normalize());
-                skull.setShooter(entity);
-                skull.setCharged(true);
-
-                // Tâche pour faire suivre la tête
-                new BukkitRunnable() {
-                    int lifetime = 0;
-                    @Override
-                    public void run() {
-                        if (skull.isDead() || lifetime > 100 || target.isDead()) {
-                            cancel();
-                            return;
-                        }
-
-                        Vector toTarget = target.getEyeLocation().subtract(skull.getLocation()).toVector().normalize();
-                        skull.setVelocity(toTarget.multiply(1.5));
-
-                        skull.getWorld().spawnParticle(Particle.SOUL_FIRE_FLAME, skull.getLocation(), 2, 0.1, 0.1, 0.1, 0);
-                        lifetime++;
+                // Focus spécial sur chaque joueur
+                for (Player player : players) {
+                    if (!player.isDead()) {
+                        fireTrackingSkull(player, false);
                     }
-                }.runTaskTimer(plugin, 20L, 2L);
+                }
 
-                skulls++;
+                burst++;
             }
-        }.runTaskTimer(plugin, 0L, 20L); // Toutes les secondes
+        }.runTaskTimer(plugin, 0L, 12L); // Toutes les 0.6s
     }
 
-    /**
-     * Draine les âmes des joueurs proches
-     */
-    private void soulDrain(Player target) {
+    private void skullBarrageDevastating(List<Player> players) {
         isChanneling = true;
-        lastSoulDrain = System.currentTimeMillis();
+        lastSkullBarrage = System.currentTimeMillis();
 
-        entity.getWorld().playSound(entity.getLocation(), Sound.BLOCK_CONDUIT_AMBIENT, 2.0f, 0.5f);
+        Bukkit.broadcastMessage("§5§l⚠ BARRAGE FINAL IMMINENT ! ⚠");
+        entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_WITHER_HURT, 3.0f, 0.2f);
 
         new BukkitRunnable() {
-            int ticks = 0;
+            int intensity = 0;
             @Override
             public void run() {
-                if (ticks > 80 || entity.isDead() || target.isDead()) {
+                if (intensity >= 12 || entity.isDead()) {
                     isChanneling = false;
                     cancel();
                     return;
                 }
 
-                // Dessine les liens d'âme
-                drawSoulLink(entity.getEyeLocation(), target.getEyeLocation());
+                // Intensité croissante
+                int skullsPerPlayer = 1 + (intensity / 3);
 
-                // Draine la vie et régénère le boss
-                target.damage(2.0, entity);
-                entity.setHealth(Math.min(entity.getHealth() + 1.0, maxHealth));
+                for (Player player : players) {
+                    if (player.isDead()) continue;
 
-                target.addPotionEffect(new PotionEffect(PotionEffectType.WEAKNESS, 30, 1));
-                target.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 30, 0));
-
-                // Chance de créer une orbe d'âme
-                if (Math.random() < 0.1) {
-                    createSoulOrb(target.getLocation());
+                    for (int i = 0; i < skullsPerPlayer; i++) {
+                        new BukkitRunnable() {
+                            @Override
+                            public void run() {
+                                fireTrackingSkull(player, true); // Toutes les têtes sont chargées
+                            }
+                        }.runTaskLater(plugin, i * 2L);
+                    }
                 }
 
-                ticks += 2;
+                intensity++;
             }
-        }.runTaskTimer(plugin, 0L, 2L);
+        }.runTaskTimer(plugin, 0L, 8L); // Toutes les 0.4s
     }
 
-    /**
-     * Drain d'âme de zone (Phase 3)
-     */
-    private void soulDrainArea(List<Player> targets) {
+    private void soulDrainOmnipresent(List<Player> players) {
         isChanneling = true;
         lastSoulDrain = System.currentTimeMillis();
 
         entity.getWorld().playSound(entity.getLocation(), Sound.BLOCK_CONDUIT_AMBIENT, 3.0f, 0.3f);
+        Bukkit.broadcastMessage("§5§l[BOSS] §dDrain d'âmes omnipresent !");
 
         new BukkitRunnable() {
-            int ticks = 0;
+            int duration = 0;
             @Override
             public void run() {
-                if (ticks > 60 || entity.isDead()) {
+                if (duration > 100 || entity.isDead()) {
                     isChanneling = false;
                     cancel();
                     return;
                 }
 
-                for (Player target : targets) {
-                    if (target.isDead()) continue;
+                // Drain simultané de tous les joueurs
+                for (Player player : players) {
+                    if (player.isDead()) continue;
 
-                    drawSoulLink(entity.getEyeLocation(), target.getEyeLocation());
-                    target.damage(1.5, entity);
-                    target.addPotionEffect(new PotionEffect(PotionEffectType.WITHER, 40, 1));
+                    drawSoulLink(entity.getEyeLocation(), player.getEyeLocation());
+                    player.damage(1.8, entity);
+                    player.addPotionEffect(new PotionEffect(PotionEffectType.WITHER, 60, 1));
+                    player.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 40, 1));
+
+                    // Crée des orbes d'âme flottantes
+                    if (Math.random() < 0.15) {
+                        createSoulOrb(player.getLocation().add(0, 2, 0));
+                    }
                 }
 
-                entity.setHealth(Math.min(entity.getHealth() + targets.size(), maxHealth));
-                ticks += 3;
+                // Régénération du boss basée sur le nombre de joueurs
+                entity.setHealth(Math.min(entity.getHealth() + players.size() * 0.8, maxHealth));
+                duration += 3;
             }
         }.runTaskTimer(plugin, 0L, 3L);
     }
 
-    /**
-     * Invoque une armée de morts-vivants
-     */
-    private void massNecromancy() {
+    private void massNecromancyAdaptive(List<Player> players) {
         isChanneling = true;
         lastNecromancy = System.currentTimeMillis();
 
-        Bukkit.broadcastMessage("§d§l[BOSS] §5L'Archliche invoque ses servants...");
+        Bukkit.broadcastMessage("§d§l[BOSS] §5L'Archliche invoque une armée adaptée...");
         entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_WITHER_SPAWN, 2.0f, 0.7f);
+
+        // Nombre de sbires adaptatif
+        int minionsToSummon = Math.min(players.size() + 3, 10);
 
         new BukkitRunnable() {
             int summoned = 0;
             @Override
             public void run() {
-                if (summoned >= 6 || entity.isDead()) {
+                if (summoned >= minionsToSummon || entity.isDead()) {
                     isChanneling = false;
                     cancel();
                     return;
                 }
 
                 Location spawnLoc = altarLocation.clone().add(
-                        (random.nextDouble() - 0.5) * 20,
+                        (random.nextDouble() - 0.5) * 25,
                         0,
-                        (random.nextDouble() - 0.5) * 20
+                        (random.nextDouble() - 0.5) * 25
                 );
                 spawnLoc = spawnLoc.getWorld().getHighestBlockAt(spawnLoc).getLocation().add(0, 1, 0);
 
-                // Varie les types de servants
+                // Types de sbires adaptatifs
                 String minionType;
-                if (summoned < 2) {
-                    minionType = "necromancer_dark"; // Mini-boss
-                } else if (summoned < 4) {
-                    minionType = "enderman_shadow";
+                if (players.size() >= 4) {
+                    // Plus de joueurs = sbires plus forts
+                    minionType = switch (summoned % 4) {
+                        case 0 -> "necromancer_dark";
+                        case 1 -> "dragon_fire";
+                        case 2 -> "enderman_shadow";
+                        default -> "witch_cursed";
+                    };
                 } else {
-                    minionType = "witch_cursed";
+                    minionType = switch (summoned % 3) {
+                        case 0 -> "enderman_shadow";
+                        case 1 -> "witch_cursed";
+                        default -> "golem_stone";
+                    };
                 }
 
                 LivingEntity minion = plugin.getMobManager().spawnCustomMob(minionType, spawnLoc);
                 if (minion != null) {
                     summonedUndead.add(minion);
 
-                    // Effets d'invocation dramatiques
+                    // Bonus selon le nombre de joueurs
+                    if (players.size() >= 3) {
+                        minion.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, Integer.MAX_VALUE, 1));
+                        minion.addPotionEffect(new PotionEffect(PotionEffectType.STRENGTH, Integer.MAX_VALUE, 0));
+                    }
+
                     spawnLoc.getWorld().spawnParticle(Particle.SOUL_FIRE_FLAME, spawnLoc, 50, 1, 2, 1, 0.1);
                     spawnLoc.getWorld().playSound(spawnLoc, Sound.ENTITY_LIGHTNING_BOLT_THUNDER, 1.0f, 0.8f);
                     spawnLoc.getWorld().strikeLightningEffect(spawnLoc);
@@ -484,140 +570,282 @@ public class WitherBoss extends CustomMob {
 
                 summoned++;
             }
-        }.runTaskTimer(plugin, 20L, 30L); // Délai initial puis toutes les 1.5s
+        }.runTaskTimer(plugin, 20L, 25L); // Délai initial puis toutes les 1.25s
     }
 
-    /**
-     * Active un bouclier de Wither
-     */
-    private void activateWitherShield() {
-        isShielded = true;
-        lastWitherShield = System.currentTimeMillis();
-
-        entity.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, 200, 3)); // 10s de protection
-        entity.getWorld().playSound(entity.getLocation(), Sound.BLOCK_ENCHANTMENT_TABLE_USE, 2.0f, 0.5f);
-
-        Bukkit.broadcastMessage("§d§l[BOSS] §5L'Archliche s'entoure d'un bouclier nécrotique !");
-
-        // Effets visuels du bouclier
-        new BukkitRunnable() {
-            int duration = 200; // 10s
-            @Override
-            public void run() {
-                if (duration <= 0 || entity.isDead()) {
-                    isShielded = false;
-                    cancel();
-                    return;
-                }
-
-                // Particules de bouclier
-                Location loc = entity.getLocation();
-                for (int i = 0; i < 8; i++) {
-                    double angle = (duration * 5 + i * 45) % 360;
-                    double radius = 3 + Math.sin(duration * 0.1) * 0.5;
-
-                    Location particleLoc = loc.clone().add(
-                            Math.cos(Math.toRadians(angle)) * radius,
-                            Math.sin(duration * 0.05) * 2 + 2,
-                            Math.sin(Math.toRadians(angle)) * radius
-                    );
-
-                    loc.getWorld().spawnParticle(Particle.WITCH, particleLoc, 1, 0, 0, 0, 0);
-                }
-
-                duration -= 5;
-            }
-        }.runTaskTimer(plugin, 0L, 5L);
-    }
-
-    /**
-     * Apocalypse nécrotique finale
-     */
-    private void necroticApocalypse(List<Player> targets) {
+    private void necroticApocalypseMultiplayer(List<Player> players) {
         isChanneling = true;
         lastApocalypse = System.currentTimeMillis();
 
         Bukkit.broadcastMessage("§5§l§k⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡");
-        Bukkit.broadcastMessage("§d§l        APOCALYPSE NÉCROTIQUE !");
+        Bukkit.broadcastMessage("§d§l     APOCALYPSE NÉCROTIQUE MULTIDIMENSIONNELLE !");
         Bukkit.broadcastMessage("§5§l§k⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡");
 
         entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_ENDER_DRAGON_DEATH, 3.0f, 0.3f);
 
         new BukkitRunnable() {
-            int wave = 0;
+            int apocalypseWave = 0;
             @Override
             public void run() {
-                if (wave >= 8 || entity.isDead()) {
+                if (apocalypseWave >= 10 || entity.isDead()) {
                     isChanneling = false;
                     cancel();
                     return;
                 }
 
-                for (Player target : targets) {
-                    if (target.isDead()) continue;
+                // Phase de destruction progressive
+                for (Player player : players) {
+                    if (player.isDead()) continue;
 
-                    // Explosions aléatoires autour des joueurs
-                    for (int i = 0; i < 3; i++) {
-                        Location explosionLoc = target.getLocation().add(
-                                (random.nextDouble() - 0.5) * 12,
-                                random.nextDouble() * 5,
-                                (random.nextDouble() - 0.5) * 12
+                    // Explosions multiples autour de chaque joueur
+                    int explosionCount = 2 + (apocalypseWave / 2);
+                    for (int i = 0; i < explosionCount; i++) {
+                        Location explosionLoc = player.getLocation().add(
+                                (random.nextDouble() - 0.5) * 15,
+                                random.nextDouble() * 8,
+                                (random.nextDouble() - 0.5) * 15
                         );
 
-                        createNecroticExplosion(explosionLoc);
+                        new BukkitRunnable() {
+                            @Override
+                            public void run() {
+                                createApocalypticExplosion(explosionLoc);
+                            }
+                        }.runTaskLater(plugin, i * 5L);
                     }
                 }
 
-                wave++;
+                // Impact central rotatif
+                if (apocalypseWave % 2 == 0) {
+                    createRotatingApocalypse(entity.getLocation(), apocalypseWave);
+                }
+
+                apocalypseWave++;
             }
-        }.runTaskTimer(plugin, 0L, 20L); // Toutes les secondes
+        }.runTaskTimer(plugin, 0L, 18L); // Toutes les 0.9s
     }
 
-    /**
-     * Séquence d'explosion finale
-     */
-    private void finalExplosionSequence() {
+    private void finalExplosionSequenceMultiplayer(List<Player> players) {
         isChanneling = true;
 
-        Bukkit.broadcastMessage("§4§l⚠ L'ARCHLICHE SE PRÉPARE À EXPLOSER ! ⚠");
+        Bukkit.broadcastMessage("§4§l⚠⚠⚠ L'ARCHLICHE ENTRE EN PHASE FINALE ! ⚠⚠⚠");
         entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_WITHER_HURT, 3.0f, 0.1f);
 
+        // Countdown adaptatif selon le nombre de joueurs
+        int countdownTime = Math.max(5, 12 - players.size());
+
         new BukkitRunnable() {
-            int countdown = 10;
+            int countdown = countdownTime;
             @Override
             public void run() {
                 if (entity.isDead() || countdown <= 0) {
-                    // EXPLOSION FINALE MASSIVE
-                    Location loc = entity.getLocation();
-                    loc.getWorld().createExplosion(loc, 8.0f, false, false);
-
-                    for (int i = 0; i < 5; i++) {
-                        Location randomLoc = loc.clone().add(
-                                (random.nextDouble() - 0.5) * 30,
-                                random.nextDouble() * 10,
-                                (random.nextDouble() - 0.5) * 30
-                        );
-                        createNecroticExplosion(randomLoc);
-                    }
-
-                    Bukkit.broadcastMessage("§d§l[BOSS] §5L'Archliche Nécrosis a été vaincu !");
+                    // EXPLOSIONS FINALES MULTIPLES
+                    executeMultiPlayerFinale(players);
                     cancel();
                     return;
                 }
 
-                Bukkit.broadcastMessage("§c§l" + countdown + "...");
-                entity.getWorld().playSound(entity.getLocation(), Sound.UI_BUTTON_CLICK, 2.0f, 2.0f);
+                Bukkit.broadcastMessage("§c§l" + countdown + "... §5FUYEZ !");
+                entity.getWorld().playSound(entity.getLocation(), Sound.UI_BUTTON_CLICK, 3.0f, 2.0f);
+
+                // Explosions préludes autour des joueurs
+                for (Player player : players) {
+                    if (!player.isDead()) {
+                        Location preLoc = player.getLocation().add(
+                                (random.nextDouble() - 0.5) * 8,
+                                random.nextDouble() * 4,
+                                (random.nextDouble() - 0.5) * 8
+                        );
+                        createNecroticExplosion(preLoc);
+                    }
+                }
 
                 countdown--;
             }
         }.runTaskTimer(plugin, 0L, 20L);
     }
 
-    // === MÉTHODES UTILITAIRES ===
+    private void executeMultiPlayerFinale(List<Player> players) {
+        Location bossLoc = entity.getLocation();
+
+        // Explosion centrale massive
+        bossLoc.getWorld().createExplosion(bossLoc, 10.0f, false, false);
+
+        // Explosions individuelles pour chaque joueur
+        for (Player player : players) {
+            if (player.isDead()) continue;
+
+            for (int i = 0; i < 5; i++) {
+                new BukkitRunnable() {
+                    @Override
+                    public void run() {
+                        Location explosionLoc = player.getLocation().add(
+                                (random.nextDouble() - 0.5) * 12,
+                                random.nextDouble() * 6,
+                                (random.nextDouble() - 0.5) * 12
+                        );
+                        createApocalypticExplosion(explosionLoc);
+                    }
+                }.runTaskLater(plugin, i * 10L);
+            }
+        }
+
+        // Explosion finale retardée
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                Bukkit.broadcastMessage("§d§l[BOSS] §5L'Archliche Nécrosis a été vaincu !");
+                for (int i = 0; i < 20; i++) {
+                    Location randomLoc = bossLoc.clone().add(
+                            (random.nextDouble() - 0.5) * 40,
+                            random.nextDouble() * 15,
+                            (random.nextDouble() - 0.5) * 40
+                    );
+                    createApocalypticExplosion(randomLoc);
+                }
+            }
+        }.runTaskLater(plugin, 100L);
+    }
+
+    // === MÉTHODES UTILITAIRES AMÉLIORÉES ===
+
+    private void fireTrackingSkull(Player target, boolean charged) {
+        WitherSkull skull = entity.getWorld().spawn(entity.getEyeLocation(), WitherSkull.class);
+        skull.setDirection(target.getEyeLocation().subtract(entity.getEyeLocation()).toVector().normalize());
+        skull.setShooter(entity);
+        skull.setCharged(charged);
+
+        if (activePlayerCount > 2) {
+            // Têtes à tête chercheuse pour plus de joueurs
+            new BukkitRunnable() {
+                int lifetime = 0;
+                @Override
+                public void run() {
+                    if (skull.isDead() || lifetime > 80 || target.isDead()) {
+                        cancel();
+                        return;
+                    }
+
+                    Vector toTarget = target.getEyeLocation().subtract(skull.getLocation()).toVector().normalize();
+                    skull.setVelocity(toTarget.multiply(charged ? 2.0 : 1.8));
+
+                    skull.getWorld().spawnParticle(charged ? Particle.SOUL_FIRE_FLAME : Particle.SOUL,
+                            skull.getLocation(), 3, 0.1, 0.1, 0.1, 0);
+                    lifetime++;
+                }
+            }.runTaskTimer(plugin, 10L, 2L);
+        }
+    }
+
+    private void applyCurseToPlayer(Player player) {
+        // Malédiction adaptative selon le nombre de malédictions existantes
+        int curseLevel = playerCurses.getOrDefault(player, 0);
+
+        PotionEffectType[] curses = {
+                PotionEffectType.POISON,
+                PotionEffectType.WITHER,
+                PotionEffectType.SLOWNESS,
+                PotionEffectType.WEAKNESS,
+                PotionEffectType.BLINDNESS
+        };
+
+        PotionEffectType curse = curses[Math.min(curseLevel, curses.length - 1)];
+        int amplifier = Math.min(curseLevel / 2, 3);
+
+        player.addPotionEffect(new PotionEffect(curse, 200 + curseLevel * 20, amplifier));
+        addCurse(player);
+        increaseThreat(player, 8);
+
+        player.getWorld().playSound(player.getLocation(), Sound.ENTITY_VEX_CHARGE, 1.0f, 0.6f);
+        player.getWorld().spawnParticle(Particle.WITCH, player.getEyeLocation(), 15, 0.5, 0.5, 0.5);
+    }
+
+    private void createCurseVortex(Location location) {
+        new BukkitRunnable() {
+            int ticks = 0;
+            @Override
+            public void run() {
+                if (ticks >= 60) {
+                    cancel();
+                    return;
+                }
+
+                for (int i = 0; i < 8; i++) {
+                    double angle = (ticks * 15 + i * 45) % 360;
+                    double radius = 2 + Math.sin(ticks * 0.2) * 0.5;
+
+                    Location particleLoc = location.clone().add(
+                            Math.cos(Math.toRadians(angle)) * radius,
+                            Math.sin(ticks * 0.1) * 1.5 + 1,
+                            Math.sin(Math.toRadians(angle)) * radius
+                    );
+
+                    location.getWorld().spawnParticle(Particle.WITCH, particleLoc, 1, 0, 0, 0, 0);
+                }
+
+                ticks++;
+            }
+        }.runTaskTimer(plugin, 0L, 1L);
+    }
+
+    private void drawTargetingBeam(Location from, Location to) {
+        Vector direction = to.toVector().subtract(from.toVector()).normalize();
+        double distance = from.distance(to);
+
+        for (double i = 0; i < distance; i += 1.0) {
+            Location beamLoc = from.clone().add(direction.clone().multiply(i));
+            from.getWorld().spawnParticle(Particle.END_ROD, beamLoc, 1, 0.1, 0.1, 0.1, 0);
+        }
+    }
+
+    private void createApocalypticExplosion(Location location) {
+        location.getWorld().spawnParticle(Particle.SOUL_FIRE_FLAME, location, 40, 3, 3, 3, 0.2);
+        location.getWorld().spawnParticle(Particle.EXPLOSION, location, 10, 2, 2, 2, 0);
+        location.getWorld().playSound(location, Sound.ENTITY_GENERIC_EXPLODE, 1.5f, 0.6f);
+
+        for (Player p : getNearbyPlayersAt(location, 6)) {
+            p.damage(damage * 0.8, entity);
+            p.addPotionEffect(new PotionEffect(PotionEffectType.WITHER, 100, 2));
+            increaseThreat(p, 12);
+        }
+    }
+
+    private void createRotatingApocalypse(Location center, int wave) {
+        new BukkitRunnable() {
+            int angle = wave * 45;
+            int rotations = 0;
+            @Override
+            public void run() {
+                if (rotations >= 3) {
+                    cancel();
+                    return;
+                }
+
+                for (int r = 5; r <= 20; r += 5) {
+                    double radians = Math.toRadians(angle);
+                    Location explosionLoc = center.clone().add(
+                            Math.cos(radians) * r,
+                            0,
+                            Math.sin(radians) * r
+                    );
+
+                    createApocalypticExplosion(explosionLoc);
+                }
+
+                angle += 72; // Rotation de 72 degrés
+                if (angle >= 360) {
+                    angle = 0;
+                    rotations++;
+                }
+            }
+        }.runTaskTimer(plugin, 0L, 5L);
+    }
+
+    // === MÉTHODES INCHANGÉES (conservées du code original) ===
 
     private void startAwakeningSequence() {
         currentPhase = BossPhase.AWAKENING;
-        entity.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, 300, 10)); // 15s d'invulnérabilité
+        entity.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, 300, 10));
 
         Bukkit.broadcastMessage("");
         Bukkit.broadcastMessage("§5§l§k=====================================");
@@ -627,12 +855,11 @@ public class WitherBoss extends CustomMob {
         Bukkit.broadcastMessage("§5§l§k=====================================");
         Bukkit.broadcastMessage("");
 
-        // Séquence d'éveil dramatique
         new BukkitRunnable() {
             int ticks = 0;
             @Override
             public void run() {
-                if (ticks >= 300 || entity.isDead()) { // 15 secondes
+                if (ticks >= 300 || entity.isDead()) {
                     currentPhase = BossPhase.PHASE_1;
                     Bukkit.broadcastMessage("§d§l[BOSS] §5L'Archliche est maintenant éveillé ! Le combat commence !");
                     cancel();
@@ -641,13 +868,12 @@ public class WitherBoss extends CustomMob {
 
                 Location loc = entity.getLocation();
 
-                // Effets visuels d'éveil
                 if (ticks % 10 == 0) {
                     loc.getWorld().spawnParticle(Particle.PORTAL, loc, 100, 5, 5, 5, 1);
                     loc.getWorld().playSound(loc, Sound.BLOCK_PORTAL_AMBIENT, 1.0f, 0.5f);
                 }
 
-                if (ticks % 60 == 0) { // Toutes les 3 secondes
+                if (ticks % 60 == 0) {
                     Bukkit.broadcastMessage("§5§l[ÉVEIL] §d" + (15 - ticks/20) + " secondes...");
                 }
 
@@ -702,7 +928,7 @@ public class WitherBoss extends CustomMob {
 
     private void teleportToArena() {
         if (altarLocation != null) {
-            Location tpLoc = altarLocation.clone().add(0, 20, 0);
+            Location tpLoc = altarLocation.clone().add(0, 25, 0);
             entity.teleport(tpLoc);
 
             entity.getWorld().spawnParticle(Particle.PORTAL, tpLoc, 50, 2, 2, 2, 1);
@@ -714,10 +940,10 @@ public class WitherBoss extends CustomMob {
         location.getWorld().spawnParticle(Particle.SOUL_FIRE_FLAME, location, 30, 2, 2, 2, 0.1);
         location.getWorld().playSound(location, Sound.ENTITY_GENERIC_EXPLODE, 1.0f, 0.8f);
 
-        // Dégâts aux joueurs proches
         for (Player p : getNearbyPlayersAt(location, 4)) {
             p.damage(damage * 0.7, entity);
             p.addPotionEffect(new PotionEffect(PotionEffectType.WITHER, 60, 1));
+            increaseThreat(p, 6);
         }
     }
 
@@ -732,7 +958,7 @@ public class WitherBoss extends CustomMob {
     }
 
     private void createSoulOrb(Location location) {
-        ArmorStand orb = location.getWorld().spawn(location.add(0, 2, 0), ArmorStand.class);
+        ArmorStand orb = location.getWorld().spawn(location, ArmorStand.class);
         orb.setVisible(false);
         orb.setGravity(false);
         orb.setCustomName("§5Orbe d'Âme");
@@ -740,9 +966,8 @@ public class WitherBoss extends CustomMob {
 
         soulOrbs.add(orb);
 
-        // L'orbe flotte et disparaît après 10s
         new BukkitRunnable() {
-            int lifetime = 200; // 10s
+            int lifetime = 200;
             @Override
             public void run() {
                 if (lifetime <= 0 || orb.isDead()) {
@@ -752,10 +977,8 @@ public class WitherBoss extends CustomMob {
                     return;
                 }
 
-                // Effets visuels
                 orb.getWorld().spawnParticle(Particle.SOUL_FIRE_FLAME, orb.getLocation(), 3, 0.2, 0.2, 0.2, 0.01);
 
-                // Mouvement flottant
                 Vector float_movement = new Vector(
                         Math.sin(lifetime * 0.1) * 0.1,
                         Math.cos(lifetime * 0.05) * 0.05,
@@ -776,6 +999,72 @@ public class WitherBoss extends CustomMob {
     private void cleanupMinions() {
         summonedUndead.removeIf(LivingEntity::isDead);
         soulOrbs.removeIf(LivingEntity::isDead);
+    }
+
+    private void activateWitherShield() {
+        isShielded = true;
+        lastWitherShield = System.currentTimeMillis();
+
+        entity.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, 200, 3));
+        entity.getWorld().playSound(entity.getLocation(), Sound.BLOCK_ENCHANTMENT_TABLE_USE, 2.0f, 0.5f);
+
+        Bukkit.broadcastMessage("§d§l[BOSS] §5L'Archliche s'entoure d'un bouclier nécrotique !");
+
+        new BukkitRunnable() {
+            int duration = 200;
+            @Override
+            public void run() {
+                if (duration <= 0 || entity.isDead()) {
+                    isShielded = false;
+                    cancel();
+                    return;
+                }
+
+                Location loc = entity.getLocation();
+                for (int i = 0; i < 8; i++) {
+                    double angle = (duration * 5 + i * 45) % 360;
+                    double radius = 3 + Math.sin(duration * 0.1) * 0.5;
+
+                    Location particleLoc = loc.clone().add(
+                            Math.cos(Math.toRadians(angle)) * radius,
+                            Math.sin(duration * 0.05) * 2 + 2,
+                            Math.sin(Math.toRadians(angle)) * radius
+                    );
+
+                    loc.getWorld().spawnParticle(Particle.WITCH, particleLoc, 1, 0, 0, 0, 0);
+                }
+
+                duration -= 5;
+            }
+        }.runTaskTimer(plugin, 0L, 5L);
+    }
+
+    // Méthodes simplifiées pour le single player (conservées pour compatibilité)
+    private void skullBarrageSingle(Player target) {
+        fireTrackingSkull(target, false);
+    }
+
+    private void skullBarrageMulti(List<Player> targets) {
+        for (Player target : targets) {
+            if (!target.isDead()) {
+                fireTrackingSkull(target, false);
+            }
+        }
+    }
+
+    private void soulDrain(Player target) {
+        drawSoulLink(entity.getEyeLocation(), target.getEyeLocation());
+        target.damage(2.0, entity);
+        entity.setHealth(Math.min(entity.getHealth() + 1.0, maxHealth));
+        increaseThreat(target, 5);
+    }
+
+    private void soulDrainArea(List<Player> targets) {
+        for (Player target : targets) {
+            if (!target.isDead()) {
+                soulDrain(target);
+            }
+        }
     }
 
     protected List<Player> getNearbyPlayers(double radius) {

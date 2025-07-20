@@ -155,13 +155,13 @@ public class DragonFire extends CustomMob {
             int ticks = 0;
             @Override
             public void run() {
-                if (ticks > 60 || entity.isDead()) {
+                if (ticks > 10 || entity.isDead()) {
                     isPerformingAbility = false;
                     cancel();
                     return;
                 }
 
-                entity.setVelocity(direction.clone().multiply(2.5));
+                entity.setVelocity(direction.clone().multiply(1.5));
 
                 // Laisse une traînée de feu
                 Location trailLoc = entity.getLocation();
