@@ -5,6 +5,7 @@ import fr.custommobs.mobs.CustomMob;
 import org.bukkit.*;
 import org.bukkit.entity.*;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -122,6 +123,12 @@ public class NecromancerDark extends CustomMob {
                 Vex vex = entity.getWorld().spawn(spawnLoc, Vex.class);
                 vex.setCustomName("§8Âme Tourmentée");
                 vex.setTarget(target);
+
+                // IMPORTANT: Marque le sbire pour les statistiques
+                vex.setMetadata("boss_minion", new FixedMetadataValue(plugin, true));
+                vex.setMetadata("summoned_by_boss", new FixedMetadataValue(plugin, entity.getUniqueId().toString()));
+                vex.setMetadata("boss_type", new FixedMetadataValue(plugin, "necromancer_dark"));
+
                 summonedVexes.add(vex);
 
                 // Les Vexes ont une durée de vie limitée

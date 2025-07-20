@@ -2,12 +2,11 @@ package fr.custommobs;
 
 import fr.custommobs.commands.LootConfigCommand;
 import fr.custommobs.commands.SpawnMobCommand;
+import fr.custommobs.listeners.BossStatsListener;
 import fr.custommobs.listeners.MobControlListener;
 import fr.custommobs.listeners.MobSpawnListener;
 import fr.custommobs.listeners.MonsterDamageListener;
-import fr.custommobs.managers.CustomMobManager;
-import fr.custommobs.managers.LootManager;
-import fr.custommobs.managers.SpawnManager;
+import fr.custommobs.managers.*;
 import fr.custommobs.mobs.advanced.*;
 import fr.custommobs.mobs.simple.*;
 import fr.custommobs.mobs.boss.*;
@@ -19,6 +18,8 @@ public final class CustomMobsPlugin extends JavaPlugin {
     private CustomMobManager mobManager;
     private LootManager lootManager;
     private SpawnManager spawnManager;
+    private BossBarManager bossBarManager;
+    private BossStatsManager bossStatsManager;
 
     @Override
     public void onEnable() {
@@ -42,6 +43,7 @@ public final class CustomMobsPlugin extends JavaPlugin {
         getLogger().info("CustomMobs plugin activé avec succès!");
         getLogger().info("Nombre de monstres enregistrés: " + mobManager.getRegisteredMobIds().size());
         getLogger().info("Zones de spawn configurées: " + spawnManager.getSpawnZones().size());
+        getLogger().info("Système de statistiques de boss activé !");
     }
 
     @Override
@@ -52,6 +54,9 @@ public final class CustomMobsPlugin extends JavaPlugin {
         if (lootManager != null) {
             lootManager.saveLootConfig();
         }
+        if (bossBarManager != null) {
+            bossBarManager.cleanup();
+        }
 
         getLogger().info("CustomMobs plugin désactivé!");
     }
@@ -60,6 +65,8 @@ public final class CustomMobsPlugin extends JavaPlugin {
         mobManager = new CustomMobManager(this);
         lootManager = new LootManager(this);
         spawnManager = new SpawnManager(this);
+        bossBarManager = new BossBarManager(this);
+        bossStatsManager = new BossStatsManager(this);
     }
 
     private void registerMobs() {
@@ -77,6 +84,7 @@ public final class CustomMobsPlugin extends JavaPlugin {
         mobManager.registerMob("necromancer_dark", NecromancerDark.class);
         mobManager.registerMob("geode_aberration", GeodeAberration.class);
 
+        // Boss
         mobManager.registerMob("wither_boss", WitherBoss.class);
         mobManager.registerMob("warden_boss", WardenBoss.class);
         mobManager.registerMob("ravager_boss", RavagerBoss.class);
@@ -91,6 +99,7 @@ public final class CustomMobsPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new MobSpawnListener(this), this);
         getServer().getPluginManager().registerEvents(new MobControlListener(this), this);
         getServer().getPluginManager().registerEvents(new MonsterDamageListener(), this);
+        getServer().getPluginManager().registerEvents(new BossStatsListener(this), this);
     }
 
     // Getters
@@ -108,5 +117,13 @@ public final class CustomMobsPlugin extends JavaPlugin {
 
     public SpawnManager getSpawnManager() {
         return spawnManager;
+    }
+
+    public BossBarManager getBossBarManager() {
+        return bossBarManager;
+    }
+
+    public BossStatsManager getBossStatsManager() {
+        return bossStatsManager;
     }
 }

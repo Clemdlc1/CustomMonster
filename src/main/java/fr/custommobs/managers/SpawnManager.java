@@ -2,7 +2,9 @@ package fr.custommobs.managers;
 
 import fr.custommobs.CustomMobsPlugin;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -69,7 +71,7 @@ public class SpawnManager {
     }
 
     /**
-     * Spawn des monstres dans une zone
+     * Spawn des monstres dans une zone avec validation des blocs
      */
     private void spawnMobsInZone(String zoneId, SpawnZone zone) {
         // Nettoie les mobs morts
@@ -86,7 +88,7 @@ public class SpawnManager {
 
         for (int i = 0; i < toSpawn; i++) {
             String mobType = zone.getRandomMobType();
-            Location spawnLoc = zone.getRandomLocation();
+            Location spawnLoc = findValidSpawnLocation(zone, 10); // 10 tentatives max
 
             if (spawnLoc != null && spawnLoc.getWorld() != null) {
                 LivingEntity mob = plugin.getMobManager().spawnCustomMob(mobType, spawnLoc);
@@ -95,9 +97,146 @@ public class SpawnManager {
 
                     // Marque le mob avec l'ID de la zone
                     mob.setMetadata("spawn_zone", new org.bukkit.metadata.FixedMetadataValue(plugin, zoneId));
+
+                    plugin.getLogger().fine("Mob spawné: " + mobType + " dans la zone " + zoneId +
+                            " à " + spawnLoc.getBlockX() + "," + spawnLoc.getBlockY() + "," + spawnLoc.getBlockZ());
                 }
             }
         }
+    }
+
+    /**
+     * Trouve un emplacement de spawn valide dans une zone
+     */
+    private Location findValidSpawnLocation(SpawnZone zone, int maxAttempts) {
+        World world = org.bukkit.Bukkit.getWorld(zone.getWorldName());
+        if (world == null) return null;
+
+        Random random = new Random();
+
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            // Génère des coordonnées aléatoires dans la zone
+            int x = random.nextInt(zone.getMaxX() - zone.getMinX() + 1) + zone.getMinX();
+            int z = random.nextInt(zone.getMaxZ() - zone.getMinZ() + 1) + zone.getMinZ();
+
+            // Trouve la surface la plus haute dans la plage Y définie
+            Location testLoc = findSafeLocationAt(world, x, z, zone.getMinY(), zone.getMaxY());
+
+            if (testLoc != null && isValidSpawnLocation(testLoc)) {
+                return testLoc;
+            }
+        }
+
+        plugin.getLogger().fine("Impossible de trouver un emplacement valide dans la zone après " + maxAttempts + " tentatives");
+        return null;
+    }
+
+    /**
+     * Trouve un emplacement sûr à des coordonnées données
+     */
+    private Location findSafeLocationAt(World world, int x, int z, int minY, int maxY) {
+        // Commence par le haut et descend pour trouver un bloc solide
+        for (int y = maxY; y >= minY; y--) {
+            Location testLoc = new Location(world, x + 0.5, y, z + 0.5);
+
+            if (isValidSpawnLocation(testLoc)) {
+                return testLoc;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Vérifie si un emplacement est valide pour le spawn
+     */
+    private boolean isValidSpawnLocation(Location location) {
+        if (location == null || location.getWorld() == null) {
+            return false;
+        }
+
+        Block groundBlock = location.getBlock().getRelative(0, -1, 0);
+
+        // Le sol doit être solide et pas dangereux
+        if (!isValidGroundBlock(groundBlock)) {
+            return false;
+        }
+
+        // Vérifications supplémentaires de sécurité
+        if (isInWater(location) || isInLava(location) || isTooHigh(location)) {
+            return false;
+        }
+
+        // Évite les spawns trop proches des joueurs
+        if (isTooCloseToPlayers(location, 8.0)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Vérifie si un bloc est un bon sol pour le spawn
+     */
+    private boolean isValidGroundBlock(Block block) {
+        Material type = block.getType();
+
+        // Blocs solides acceptables
+        if (!type.isSolid()) {
+            return false;
+        }
+
+        // Blocs dangereux à éviter
+        if (type == Material.LAVA ||
+                type == Material.MAGMA_BLOCK ||
+                type == Material.CACTUS ||
+                type == Material.CAMPFIRE ||
+                type == Material.SOUL_CAMPFIRE ||
+                type.name().contains("PRESSURE_PLATE") ||
+                type == Material.TRIPWIRE_HOOK) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Vérifie si l'emplacement est dans l'eau
+     */
+    private boolean isInWater(Location location) {
+        Block block = location.getBlock();
+        return block.getType() == Material.WATER;
+    }
+
+    /**
+     * Vérifie si l'emplacement est dans la lave
+     */
+    private boolean isInLava(Location location) {
+        Block block = location.getBlock();
+        return block.getType() == Material.LAVA;
+    }
+
+    /**
+     * Vérifie si l'emplacement est trop haut (risque de chute mortelle)
+     */
+    private boolean isTooHigh(Location location) {
+        // Vérifie s'il y a un vide de plus de 10 blocs en dessous
+        Location below = location.clone();
+        for (int i = 1; i <= 10; i++) {
+            below.subtract(0, 1, 0);
+            if (below.getBlock().getType().isSolid()) {
+                return false; // Il y a un sol en dessous
+            }
+        }
+        return true; // Pas de sol trouvé dans les 10 blocs
+    }
+
+    /**
+     * Vérifie si l'emplacement est trop proche des joueurs
+     */
+    private boolean isTooCloseToPlayers(Location location, double minDistance) {
+        return location.getWorld().getPlayers().stream()
+                .anyMatch(player -> player.getLocation().distance(location) < minDistance);
     }
 
     /**
@@ -174,23 +313,6 @@ public class SpawnManager {
                     mobTypes, maxMobs, groupSize, spawnInterval, enabled);
         }
 
-        public Location getRandomLocation() {
-            World world = org.bukkit.Bukkit.getWorld(worldName);
-            if (world == null) return null;
-
-            Random random = new Random();
-            int x = random.nextInt(maxX - minX + 1) + minX;
-            int y = random.nextInt(maxY - minY + 1) + minY;
-            int z = random.nextInt(maxZ - minZ + 1) + minZ;
-
-            return new Location(world, x, y, z);
-        }
-
-        public String getRandomMobType() {
-            if (mobTypes.isEmpty()) return null;
-            return mobTypes.get(new Random().nextInt(mobTypes.size()));
-        }
-
         // Getters
         public String getWorldName() { return worldName; }
         public int getMinX() { return minX; }
@@ -204,5 +326,10 @@ public class SpawnManager {
         public int getGroupSize() { return groupSize; }
         public int getSpawnInterval() { return spawnInterval; }
         public boolean isEnabled() { return enabled; }
+
+        public String getRandomMobType() {
+            if (mobTypes.isEmpty()) return null;
+            return mobTypes.get(new Random().nextInt(mobTypes.size()));
+        }
     }
 }

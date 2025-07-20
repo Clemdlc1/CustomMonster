@@ -159,38 +159,59 @@ public class SkeletonArcher extends CustomMob {
         // --- Direction de base vers la cible ---
         Vector direction = target.getEyeLocation().subtract(startLoc).toVector();
         double distance = direction.length();
+
+        // Vérification de sécurité
+        if (distance == 0 || direction.lengthSquared() == 0) {
+            return; // Évite les divisions par zéro
+        }
+
         direction.normalize();
 
-        // --- Prédiction simple du mouvement ---
+        // --- Prédiction améliorée du mouvement ---
         Vector targetVelocity = target.getVelocity();
-        double timeToTarget = distance / (2.0 * speedMultiplier); // Temps de vol estimé
+        double arrowSpeed = 3.0 * speedMultiplier; // Vitesse réaliste de flèche
+        double timeToTarget = distance / arrowSpeed;
 
-        // Ajustement prédictif seulement si le joueur bouge
-        if (targetVelocity.lengthSquared() > 0.01) {
-            Vector prediction = targetVelocity.clone().multiply(timeToTarget);
+        // Limite le temps de prédiction pour éviter les tirs impossibles
+        timeToTarget = Math.min(timeToTarget, 2.0);
+
+        // Prédiction de position seulement si le joueur bouge significativement
+        if (targetVelocity.lengthSquared() > 0.1) {
+            Vector prediction = targetVelocity.clone().multiply(timeToTarget * 0.8); // Facteur de correction
             Location predictedLocation = target.getEyeLocation().add(prediction);
-            direction = predictedLocation.subtract(startLoc).toVector().normalize();
+
+            // Vérifie que la position prédite n'est pas trop loin
+            if (predictedLocation.distance(startLoc) <= distance * 1.5) {
+                direction = predictedLocation.subtract(startLoc).toVector();
+                if (direction.lengthSquared() > 0) {
+                    direction.normalize();
+                }
+            }
         }
 
         // --- Compensation de gravité simplifiée ---
-        double gravity = 0.05; // Constante de gravité pour les flèches
-        double yOffset = (gravity * timeToTarget * timeToTarget) / 2;
-        direction.setY(direction.getY() + yOffset);
+        if (distance > 5) { // Seulement pour les tirs à distance
+            double gravityCompensation = (distance * distance) / (arrowSpeed * arrowSpeed * 20);
+            direction.setY(direction.getY() + Math.min(gravityCompensation, 0.3)); // Limite la compensation
+        }
 
         // --- Création et tir de la flèche ---
         Arrow arrow = world.spawn(startLoc, Arrow.class);
         arrow.setShooter(entity);
-        arrow.setVelocity(direction.multiply(2.0 * speedMultiplier));
+
+        // Vitesse finale de la flèche
+        Vector finalVelocity = direction.multiply(arrowSpeed);
+        arrow.setVelocity(finalVelocity);
         arrow.setPickupStatus(Arrow.PickupStatus.DISALLOWED);
 
         // Configuration des dégâts
-        double baseDamage = 4.0 + (powerLevel * 1.25); // Dégâts de base + power
+        double baseDamage = 4.0 + (powerLevel * 1.25);
         arrow.setDamage(baseDamage);
 
         // Effet de potion si spécifié
         if (effectType != null) {
-            arrow.addCustomEffect(new PotionEffect(effectType, 100, 1), true); // 5s d'effet
-            arrow.setColor(Color.GRAY); // Couleur pour la distinguer
+            arrow.addCustomEffect(new PotionEffect(effectType, 100, 1), true);
+            arrow.setColor(Color.GRAY);
         }
 
         // Son de tir
