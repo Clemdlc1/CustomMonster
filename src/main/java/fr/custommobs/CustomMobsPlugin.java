@@ -1,5 +1,6 @@
 package fr.custommobs;
 
+import fr.custommobs.api.CustomMobsAPI;
 import fr.custommobs.commands.LootConfigCommand;
 import fr.custommobs.commands.SpawnMobCommand;
 import fr.custommobs.listeners.BossStatsListener;
@@ -39,6 +40,7 @@ public final class CustomMobsPlugin extends JavaPlugin {
 
         // Enregistre les listeners
         registerListeners();
+        CustomMobsAPI.getInstance();
 
         getLogger().info("CustomMobs plugin activé avec succès!");
         getLogger().info("Nombre de monstres enregistrés: " + mobManager.getRegisteredMobIds().size());
