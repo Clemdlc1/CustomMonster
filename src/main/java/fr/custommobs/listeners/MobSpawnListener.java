@@ -68,6 +68,9 @@ public class MobSpawnListener implements Listener {
     @EventHandler(priority = EventPriority.HIGH)
     public void onEntityDeath(EntityDeathEvent event) {
         LivingEntity entity = event.getEntity();
+        if (entity instanceof Player) {
+            return;
+        }
         event.getDrops().clear();
         event.setDroppedExp(0);
         // Vérifie si c'est un monstre custom
