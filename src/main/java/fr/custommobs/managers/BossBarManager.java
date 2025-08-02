@@ -1,7 +1,6 @@
 package fr.custommobs.managers;
 
 import fr.custommobs.CustomMobsPlugin;
-import fr.custommobs.mobs.CustomMob;
 import org.bukkit.Bukkit;
 import org.bukkit.boss.BarColor;
 import org.bukkit.boss.BarFlag;
@@ -165,9 +164,6 @@ public class BossBarManager {
             case "wither_boss" -> "§5§lArchliche Nécrosis";
             case "warden_boss" -> "§0§lGardien des Abysses";
             case "ravager_boss" -> "§c§lDévastateur Primordial";
-            case "necromancer_dark" -> "§5§lArchiliche";
-            case "dragon_fire" -> "§4§lDrake Cendré";
-            case "geode_aberration" -> "§d§lAberration Géodique";
             default -> "§6§lBoss Mystérieux";
         };
     }

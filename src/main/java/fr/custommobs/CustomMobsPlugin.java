@@ -1,6 +1,5 @@
 package fr.custommobs;
 
-import fr.custommobs.api.CustomMobsAPI;
 import fr.custommobs.commands.LootConfigCommand;
 import fr.custommobs.commands.SpawnMobCommand;
 import fr.custommobs.listeners.BossStatsListener;
@@ -40,7 +39,6 @@ public final class CustomMobsPlugin extends JavaPlugin {
 
         // Enregistre les listeners
         registerListeners();
-        CustomMobsAPI.getInstance();
 
         getLogger().info("CustomMobs plugin activé avec succès!");
         getLogger().info("Nombre de monstres enregistrés: " + mobManager.getRegisteredMobIds().size());
@@ -80,6 +78,7 @@ public final class CustomMobsPlugin extends JavaPlugin {
         mobManager.registerMob("enderman_shadow", EndermanShadow.class);
         mobManager.registerMob("witch_cursed", WitchCursed.class);
         mobManager.registerMob("golem_stone", GolemStone.class);
+        mobManager.registerMob("lutin_treasure", LutinTreasure.class);
 
         // Monstres avancés
         mobManager.registerMob("dragon_fire", DragonFire.class);
