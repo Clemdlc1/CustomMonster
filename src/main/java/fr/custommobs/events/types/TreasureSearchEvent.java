@@ -2,6 +2,7 @@ package fr.custommobs.events.types;
 
 import fr.custommobs.CustomMobsPlugin;
 import fr.custommobs.api.PrisonTycoonHook;
+import fr.custommobs.events.EventListener;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.Chest;
@@ -20,7 +21,7 @@ public class TreasureSearchEvent extends ServerEvent {
     private final Map<UUID, Integer> treasuresFound = new HashMap<>();
     private final Set<Location> foundTreasures = new HashSet<>();
 
-    public TreasureSearchEvent(CustomMobsPlugin plugin, PrisonTycoonHook prisonHook, EventRewardsManager rewardsManager) {
+    public TreasureSearchEvent(CustomMobsPlugin plugin, PrisonTycoonHook prisonHook, EventListener.EventRewardsManager rewardsManager) {
         super(plugin, prisonHook, rewardsManager, "treasure_search", "Chasse au Trésor",
                 EventType.NEUTRAL, 30 * 60);
     }

@@ -3,6 +3,7 @@ package fr.custommobs.events;
 import fr.custommobs.CustomMobsPlugin;
 import fr.custommobs.events.types.*;
 import fr.custommobs.api.PrisonTycoonHook;
+import fr.custommobs.managers.BossStatsManager;
 import org.bukkit.Bukkit;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
@@ -13,16 +14,19 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Gestionnaire principal des événements programmés
+ * Gestionnaire principal des événements programmés - Version améliorée
  */
 public class EventScheduler {
 
     private final CustomMobsPlugin plugin;
     private final PrisonTycoonHook prisonHook;
+    private final EventConfigManager configManager;
+    private final BossStatsManager bossStatsManager;
+
     private final Map<String, ScheduledEvent> scheduledEvents;
     private final Map<String, ServerEvent> activeEvents;
     private final Set<BukkitTask> schedulerTasks;
-    private final EventRewardsManager rewardsManager;
+    private final EventListener.EventRewardsManager rewardsManager;
     private final EventStatisticsManager statisticsManager;
 
     // Statistiques globales pour certains événements
@@ -32,71 +36,64 @@ public class EventScheduler {
     public EventScheduler(CustomMobsPlugin plugin) {
         this.plugin = plugin;
         this.prisonHook = PrisonTycoonHook.getInstance();
+        this.configManager = new EventConfigManager(plugin);
+        this.bossStatsManager = plugin.getBossStatsManager();
+
         this.scheduledEvents = new ConcurrentHashMap<>();
         this.activeEvents = new ConcurrentHashMap<>();
         this.schedulerTasks = new HashSet<>();
-        this.rewardsManager = new EventRewardsManager(plugin, prisonHook);
+        this.rewardsManager = new EventListener.EventRewardsManager(plugin, prisonHook);
         this.statisticsManager = new EventStatisticsManager(plugin);
 
-        initializeEvents();
+        initializeEventsFromConfig();
         startScheduler();
     }
 
     /**
-     * Initialise tous les événements programmés
+     * Initialise tous les événements depuis la configuration
      */
-    private void initializeEvents() {
-        // 11.5 Contenir la Brèche - Bi-hebdomadaire (Mer, Dim 15h)
-        scheduledEvents.put("breach_containment", new ScheduledEvent(
-                "breach_containment",
-                "Contenir la Brèche",
-                Arrays.asList(DayOfWeek.WEDNESDAY, DayOfWeek.SUNDAY),
-                15, 0, // 15h00
-                20 * 60, // 20 minutes
-                () -> new BreachContainmentEvent(plugin, prisonHook, rewardsManager)
-        ));
+    private void initializeEventsFromConfig() {
+        scheduledEvents.clear();
 
-        // 11.6 Course au Butin - Hebdomadaire (Ven 18h)
-        scheduledEvents.put("treasure_hunt", new ScheduledEvent(
-                "treasure_hunt",
-                "Course au Butin",
-                List.of(DayOfWeek.FRIDAY),
-                18, 0, // 18h00
-                15 * 60, // 15 minutes
-                () -> new TreasureHuntEvent(plugin, prisonHook, rewardsManager)
-        ));
+        for (EventConfigManager.EventScheduleConfig scheduleConfig : configManager.getAllEventSchedules()) {
+            if (!scheduleConfig.isEnabled()) {
+                plugin.getLogger().info("§7Événement désactivé: " + scheduleConfig.getId());
+                continue;
+            }
 
-        // Boss quotidien (Warden) - Tous les jours à 20h
-        scheduledEvents.put("daily_boss", new ScheduledEvent(
-                "daily_boss",
-                "Boss Quotidien",
-                Arrays.asList(DayOfWeek.values()),
-                20, 0, // 20h00
-                30 * 60, // 30 minutes max
-                () -> new DailyBossEvent(plugin, prisonHook, rewardsManager)
-        ));
+            ScheduledEvent scheduledEvent = new ScheduledEvent(
+                    scheduleConfig.getId(),
+                    scheduleConfig.getName(),
+                    scheduleConfig.getDays(),
+                    scheduleConfig.getTime().getHour(),
+                    scheduleConfig.getTime().getMinute(),
+                    scheduleConfig.getDuration(),
+                    () -> createEventInstance(scheduleConfig.getId())
+            );
 
-        // Chasse au Trésor - 2 fois par semaine (Mar, Sam 16h)
-        scheduledEvents.put("treasure_search", new ScheduledEvent(
-                "treasure_search",
-                "Chasse au Trésor",
-                Arrays.asList(DayOfWeek.TUESDAY, DayOfWeek.SATURDAY),
-                16, 0, // 16h00
-                30 * 60, // 30 minutes
-                () -> new TreasureSearchEvent(plugin, prisonHook, rewardsManager)
-        ));
+            scheduledEvents.put(scheduleConfig.getId(), scheduledEvent);
+            plugin.getLogger().info("§aÉvénement programmé: " + scheduleConfig.getName() +
+                    " (" + scheduleConfig.getId() + ")");
+        }
 
-        // Guerre des Gangs - Weekend (Sam 19h)
-        scheduledEvents.put("gang_war", new ScheduledEvent(
-                "gang_war",
-                "Guerre des Gangs",
-                List.of(DayOfWeek.SATURDAY),
-                19, 0, // 19h00
-                2 * 60 * 60, // 2 heures
-                () -> new GangWarEvent(plugin, prisonHook, rewardsManager)
-        ));
+        plugin.getLogger().info("§a" + scheduledEvents.size() + " événements programmés initialisés depuis la config!");
+    }
 
-        plugin.getLogger().info("§a" + scheduledEvents.size() + " événements programmés initialisés!");
+    /**
+     * Crée une instance d'événement selon son ID
+     */
+    private ServerEvent createEventInstance(String eventId) {
+        return switch (eventId) {
+            case "breach_containment" -> new BreachContainmentEvent(plugin, prisonHook, rewardsManager, configManager, bossStatsManager);
+            case "treasure_hunt" -> new TreasureHuntEvent(plugin, prisonHook, rewardsManager);
+            case "daily_boss" -> new DailyBossEvent(plugin, prisonHook, rewardsManager, configManager, bossStatsManager);
+            case "treasure_search" -> new TreasureSearchEvent(plugin, prisonHook, rewardsManager);
+            case "gang_war" -> new GangWarEvent(plugin, prisonHook, rewardsManager);
+            default -> {
+                plugin.getLogger().warning("Type d'événement inconnu: " + eventId);
+                yield null;
+            }
+        };
     }
 
     /**
@@ -115,17 +112,23 @@ public class EventScheduler {
 
         schedulerTasks.add(mainTask);
 
-        // Événements spontanés (questions chat) - toutes les 2-4 heures
-        BukkitTask spontaneousTask = new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (Math.random() < 0.3) { // 30% de chance
-                    startSpontaneousEvent();
-                }
-            }
-        }.runTaskTimer(plugin, 20L * 60 * 30, 20L * 60 * 60 * 2); // Toutes les 2h après 30min
+        // Événements spontanés (questions chat) - selon config
+        boolean spontaneousEnabled = configManager.getEventsConfig().getBoolean("advanced-settings.spontaneous-events.enabled", true);
+        if (spontaneousEnabled) {
+            int intervalMinutes = configManager.getEventsConfig().getInt("advanced-settings.spontaneous-events.interval-minutes", 120);
 
-        schedulerTasks.add(spontaneousTask);
+            BukkitTask spontaneousTask = new BukkitRunnable() {
+                @Override
+                public void run() {
+                    double chance = configManager.getEventsConfig().getDouble("advanced-settings.spontaneous-events.chance", 0.3);
+                    if (Math.random() < chance) {
+                        startSpontaneousEvent();
+                    }
+                }
+            }.runTaskTimer(plugin, 20L * 60 * 30, 20L * 60 * intervalMinutes);
+
+            schedulerTasks.add(spontaneousTask);
+        }
 
         // Sauvegarde des statistiques - toutes les 10 minutes
         BukkitTask saveTask = new BukkitRunnable() {
@@ -167,6 +170,11 @@ public class EventScheduler {
             ServerEvent event = entry.getValue();
 
             if (event.isFinished() || event.isCancelled()) {
+                // Intégration spéciale pour les boss
+                if (event instanceof DailyBossEvent && bossStatsManager != null) {
+                    handleBossEventEnd((DailyBossEvent) event);
+                }
+
                 event.cleanup();
                 iterator.remove();
                 plugin.getLogger().info("§eÉvénement terminé: " + event.getName());
@@ -175,12 +183,40 @@ public class EventScheduler {
     }
 
     /**
+     * Gère la fin d'un événement de boss pour l'intégration avec BossStatsManager
+     */
+    private void handleBossEventEnd(DailyBossEvent bossEvent) {
+        try {
+            // Récupérer les statistiques du boss depuis l'événement
+            if (bossEvent.getBoss() != null && !bossEvent.getBoss().isDead()) {
+                // Boss non tué - timeout
+                plugin.getLogger().info("§6[BOSS EVENT] Boss timeout - pas de victoire");
+            } else if (bossEvent.getBoss() != null) {
+                // Boss tué - récupérer les stats finales
+                String bossUUID = bossEvent.getBoss().getUniqueId().toString();
+                plugin.getLogger().info("§6[BOSS EVENT] Boss vaincu - statistiques finales disponibles");
+
+                // Forcer l'affichage des résultats si pas déjà fait
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    if (bossStatsManager != null) {
+                        bossStatsManager.debugActiveBosses();
+                    }
+                }, 20L);
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("Erreur lors de l'intégration boss stats: " + e.getMessage());
+        }
+    }
+
+    /**
      * Vérifie les événements déclenchés par conditions
      */
     private void checkTriggerEvents() {
-        // Largages - Déclenchés par 1M blocs minés collectivement
+        // Largages - Déclenchés par seuil de blocs minés (configurable)
+        int blockThreshold = configManager.getEventsConfig().getInt("trigger-events.supply-drop.block-threshold", 1000000);
+
         synchronized (blockCountLock) {
-            if (totalBlocksMined >= 1000000 && !isEventActive("supply_drop")) {
+            if (totalBlocksMined >= blockThreshold && !isEventActive("supply_drop")) {
                 totalBlocksMined = 0; // Reset compteur
                 startSupplyDrop();
             }
@@ -196,18 +232,18 @@ public class EventScheduler {
     private void startEvent(ScheduledEvent scheduled) {
         try {
             ServerEvent event = scheduled.createEvent();
+            if (event == null) {
+                plugin.getLogger().severe("§cImpossible de créer l'événement: " + scheduled.getId());
+                return;
+            }
+
             activeEvents.put(scheduled.getId(), event);
 
-            // Annonce globale
-            Bukkit.broadcastMessage("");
-            Bukkit.broadcastMessage("§6§l▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
-            Bukkit.broadcastMessage("§6§l▓▓§e§l    ÉVÉNEMENT COMMENCÉ !    §6§l▓▓");
-            Bukkit.broadcastMessage("§6§l▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
-            Bukkit.broadcastMessage("§e§l» " + event.getName());
-            Bukkit.broadcastMessage("§7§l» Durée: §f" + formatDuration(scheduled.getDurationSeconds()));
-            Bukkit.broadcastMessage("§7§l» Type: §f" + event.getType().getDisplayName());
-            Bukkit.broadcastMessage("§6§l▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
-            Bukkit.broadcastMessage("");
+            // Annonce globale selon config
+            boolean announceStart = configManager.getEventsConfig().getBoolean("advanced-settings.notifications.announce-start", true);
+            if (announceStart) {
+                broadcastEventStart(event, scheduled);
+            }
 
             // Démarrer l'événement
             event.start();
@@ -221,6 +257,30 @@ public class EventScheduler {
     }
 
     /**
+     * Annonce le démarrage d'un événement
+     */
+    private void broadcastEventStart(ServerEvent event, ScheduledEvent scheduled) {
+        Bukkit.broadcastMessage("");
+        Bukkit.broadcastMessage("§6§l▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
+        Bukkit.broadcastMessage("§6§l▓▓§e§l    ÉVÉNEMENT COMMENCÉ !    §6§l▓▓");
+        Bukkit.broadcastMessage("§6§l▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
+        Bukkit.broadcastMessage("§e§l» " + event.getName());
+        Bukkit.broadcastMessage("§7§l» Durée: §f" + formatDuration(scheduled.getDurationSeconds()));
+        Bukkit.broadcastMessage("§7§l» Type: §f" + event.getType().getDisplayName());
+
+        // Ajouter des informations spécifiques selon le type d'événement
+        if (event instanceof DailyBossEvent) {
+            String arenaName = ((DailyBossEvent) event).getArenaDisplayName();
+            if (arenaName != null) {
+                Bukkit.broadcastMessage("§7§l» Localisation: §f" + arenaName);
+            }
+        }
+
+        Bukkit.broadcastMessage("§6§l▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
+        Bukkit.broadcastMessage("");
+    }
+
+    /**
      * Lance un largage d'urgence
      */
     private void startSupplyDrop() {
@@ -229,8 +289,8 @@ public class EventScheduler {
             activeEvents.put("supply_drop", dropEvent);
 
             Bukkit.broadcastMessage("§c§l⚠ LARGAGE D'URGENCE DÉTECTÉ ! ⚠");
-            Bukkit.broadcastMessage("§e§lObjectif collectif atteint: 1M blocs minés !");
-            Bukkit.broadcastMessage("§a§lCoffres largués en mine PvP ! Dépêchez-vous !");
+            Bukkit.broadcastMessage("§e§lObjectif collectif atteint!");
+            Bukkit.broadcastMessage("§a§lCoffres largués ! Dépêchez-vous !");
 
             dropEvent.start();
 
@@ -258,13 +318,9 @@ public class EventScheduler {
      * Vérifie et gère les défis communautaires
      */
     private void checkCommunityChallenge() {
-        // Ici on pourrait vérifier différents objectifs communautaires
-        // Exemple: votes serveur, transactions HDV, têtes collectées, etc.
+        boolean challengeEnabled = configManager.getEventsConfig().getBoolean("community-challenges.enabled", false);
 
-        if (!isEventActive("community_challenge")) {
-            // Logique pour déterminer si un défi communautaire doit commencer
-            // Basé sur les statistiques du serveur
-
+        if (challengeEnabled && !isEventActive("community_challenge")) {
             if (shouldStartCommunityChallenge()) {
                 CommunityChallenge challenge = new CommunityChallenge(plugin, prisonHook, rewardsManager);
                 activeEvents.put("community_challenge", challenge);
@@ -277,9 +333,8 @@ public class EventScheduler {
      * Détermine si un défi communautaire doit commencer
      */
     private boolean shouldStartCommunityChallenge() {
-        // Exemple: lance un défi si aucun n'a eu lieu dans les dernières 24h
-        // et si certaines conditions sont remplies
-        return Math.random() < 0.1; // 10% de chance pour l'exemple
+        double chance = configManager.getEventsConfig().getDouble("community-challenges.trigger-chance", 0.1);
+        return Math.random() < chance;
     }
 
     // ===============================
@@ -301,6 +356,7 @@ public class EventScheduler {
     public boolean forceStartEvent(String eventId) {
         ScheduledEvent scheduled = scheduledEvents.get(eventId);
         if (scheduled != null && !isEventActive(eventId)) {
+            plugin.getLogger().info("§6[FORCE START] Démarrage forcé de l'événement: " + eventId);
             startEvent(scheduled);
             return true;
         }
@@ -313,11 +369,47 @@ public class EventScheduler {
     public boolean forceStopEvent(String eventId) {
         ServerEvent event = activeEvents.get(eventId);
         if (event != null) {
+            plugin.getLogger().info("§6[FORCE STOP] Arrêt forcé de l'événement: " + eventId);
+
+            // Intégration spéciale pour les boss
+            if (event instanceof DailyBossEvent && bossStatsManager != null) {
+                handleBossEventEnd((DailyBossEvent) event);
+            }
+
             event.forceEnd();
             activeEvents.remove(eventId);
             return true;
         }
         return false;
+    }
+
+    /**
+     * Recharge les événements depuis la configuration
+     */
+    public void reloadEvents() {
+        plugin.getLogger().info("§6[RELOAD] Rechargement des événements...");
+
+        // Sauvegarder les événements actifs
+        Map<String, ServerEvent> currentlyActive = new HashMap<>(activeEvents);
+
+        // Recharger la config
+        configManager.loadEventsConfig();
+
+        // Réinitialiser les événements programmés
+        initializeEventsFromConfig();
+
+        // Restaurer les événements actifs si ils sont toujours dans la config
+        for (Map.Entry<String, ServerEvent> entry : currentlyActive.entrySet()) {
+            if (scheduledEvents.containsKey(entry.getKey())) {
+                activeEvents.put(entry.getKey(), entry.getValue());
+            } else {
+                // Événement supprimé de la config - l'arrêter
+                entry.getValue().forceEnd();
+                plugin.getLogger().info("§e[RELOAD] Événement supprimé de la config: " + entry.getKey());
+            }
+        }
+
+        plugin.getLogger().info("§a[RELOAD] Rechargement terminé!");
     }
 
     /**
@@ -368,9 +460,16 @@ public class EventScheduler {
     }
 
     /**
+     * Récupère le gestionnaire de configuration
+     */
+    public EventConfigManager getConfigManager() {
+        return configManager;
+    }
+
+    /**
      * Récupère le gestionnaire de récompenses
      */
-    public EventRewardsManager getRewardsManager() {
+    public EventListener.EventRewardsManager getRewardsManager() {
         return rewardsManager;
     }
 
@@ -382,9 +481,18 @@ public class EventScheduler {
     }
 
     /**
+     * Récupère le gestionnaire de stats de boss
+     */
+    public BossStatsManager getBossStatsManager() {
+        return bossStatsManager;
+    }
+
+    /**
      * Arrête le scheduler
      */
     public void shutdown() {
+        plugin.getLogger().info("§6[SHUTDOWN] Arrêt du scheduler...");
+
         // Arrêter toutes les tâches
         for (BukkitTask task : schedulerTasks) {
             if (task != null && !task.isCancelled()) {
@@ -393,8 +501,11 @@ public class EventScheduler {
         }
         schedulerTasks.clear();
 
-        // Terminer tous les événements actifs
+        // Terminer tous les événements actifs avec intégration boss
         for (ServerEvent event : activeEvents.values()) {
+            if (event instanceof DailyBossEvent && bossStatsManager != null) {
+                handleBossEventEnd((DailyBossEvent) event);
+            }
             event.forceEnd();
             event.cleanup();
         }
@@ -402,6 +513,7 @@ public class EventScheduler {
 
         // Sauvegarder les statistiques
         statisticsManager.saveStatistics();
+        configManager.saveEventsConfig();
 
         plugin.getLogger().info("§cEvent Scheduler arrêté.");
     }

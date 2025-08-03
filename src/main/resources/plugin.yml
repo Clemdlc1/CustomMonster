@@ -16,6 +16,10 @@ commands:
     description: Spawner un monstre custom
     usage: /spawnmob <mob> [x] [y] [z]
     permission: custommobs.spawn
+  eventadmin:
+    description: admin
+    usage: /eventadmin <mob> [x] [y] [z]
+    permission: specialmine.admin
 
 permissions:
   custommobs.admin:

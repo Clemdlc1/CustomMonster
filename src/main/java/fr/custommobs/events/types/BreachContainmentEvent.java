@@ -2,288 +2,432 @@ package fr.custommobs.events.types;
 
 import fr.custommobs.CustomMobsPlugin;
 import fr.custommobs.api.PrisonTycoonHook;
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
-import org.bukkit.Particle;
-import org.bukkit.Sound;
+import fr.custommobs.events.EventConfigManager;
+import fr.custommobs.events.EventListener;
+import fr.custommobs.managers.BossStatsManager;
+import org.bukkit.*;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.metadata.FixedMetadataValue;
-import org.bukkit.potion.PotionEffect;
-import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.scheduler.BukkitTask;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ThreadLocalRandom; /**
- * 11.5 Contenir la Brèche - Événement coopératif
+import java.util.concurrent.ThreadLocalRandom;
+
+/**
+ * Événement Contenir la Brèche - Version améliorée avec localisations configurables
  */
 public class BreachContainmentEvent extends ServerEvent {
-    private static final int WAVES_COUNT = 4;
-    private static final int WAVE_DURATION = 5 * 60; // 5 minutes par vague
 
-    private int currentWave = 0;
-    private Location breachLocation;
-    private final List<LivingEntity> spawnedMobs = new ArrayList<>();
-    private final Map<UUID, Integer> eliminationScore = new ConcurrentHashMap<>();
-    private final Map<UUID, Integer> protectionScore = new ConcurrentHashMap<>();
+    private final EventConfigManager configManager;
+    private final BossStatsManager bossStatsManager;
 
-    public BreachContainmentEvent(CustomMobsPlugin plugin, PrisonTycoonHook prisonHook, EventRewardsManager rewardsManager) {
+    private final Map<UUID, Integer> mobKills = new HashMap<>();
+    private final List<Location> activeBreaches = new ArrayList<>();
+    private final Set<LivingEntity> spawnedMobs = new HashSet<>();
+
+    private int totalMobsKilled = 0;
+    private final int mobsToContain;
+    private final int duration;
+    private boolean breachesContained = false;
+
+    public BreachContainmentEvent(CustomMobsPlugin plugin, PrisonTycoonHook prisonHook,
+                                  EventListener.EventRewardsManager rewardsManager, EventConfigManager configManager,
+                                  BossStatsManager bossStatsManager) {
         super(plugin, prisonHook, rewardsManager, "breach_containment", "Contenir la Brèche",
-                EventType.COOPERATIVE, 20 * 60);
+                EventType.COOPERATIVE, configManager.getEventSchedule("breach_containment").getDuration());
+
+        this.configManager = configManager;
+        this.bossStatsManager = bossStatsManager;
+        this.mobsToContain = calculateMobsToContain();
+        this.duration = configManager.getEventSchedule("breach_containment").getDuration();
     }
 
     @Override
     protected void onStart() {
-        // Choisir une mine aléatoire pour la brèche
-        breachLocation = selectRandomMineLocation();
-
-        Bukkit.broadcastMessage("§4§l⚠ BRÈCHE DIMENSIONNELLE DÉTECTÉE ! ⚠");
-        Bukkit.broadcastMessage("§c§lUne rupture s'est ouverte en mine §e" + getMineName(breachLocation));
-        Bukkit.broadcastMessage("§6§lCoopérez pour contenir l'invasion ! (4 vagues - 5min chacune)");
-
-        // Créer des effets visuels à la brèche
-        createBreachEffects();
-
-        // Démarrer la première vague après 30 secondes
-        BukkitTask waveTask = new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (active && currentWave < WAVES_COUNT) {
-                    startNextWave();
-                } else {
-                    cancel();
-                }
-            }
-        }.runTaskTimer(plugin, 600L, WAVE_DURATION * 20L); // 30s puis toutes les 5min
-
-        tasks.add(waveTask);
-    }
-
-    private void startNextWave() {
-        currentWave++;
-
-        Bukkit.broadcastMessage("§c§l[BRÈCHE] §4Vague " + currentWave + "/" + WAVES_COUNT + " commence !");
-
-        // Jouer des sons d'alarme
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            player.playSound(player.getLocation(), Sound.BLOCK_PORTAL_AMBIENT, 1.0f, 0.5f);
+        // Sélectionner les zones de brèche depuis la configuration
+        List<EventConfigManager.EventLocationConfig> breachAreas = getBreachAreas();
+        if (breachAreas.isEmpty()) {
+            plugin.getLogger().severe("§cAucune zone de brèche configurée ('breach-areas')! Événement annulé.");
+            forceEnd();
+            return;
         }
 
-        // Spawner les monstres de la vague
-        spawnWaveMonsters();
+        // Sélectionner 2-4 zones de brèche aléatoirement
+        int breachCount = ThreadLocalRandom.current().nextInt(2, Math.min(5, breachAreas.size() + 1));
+        Collections.shuffle(breachAreas);
 
-        // Appliquer les modificateurs de réputation
-        applyReputationModifiers();
+        for (int i = 0; i < breachCount; i++) {
+            EventConfigManager.EventLocationConfig area = breachAreas.get(i);
+            Location breachLocation = area.getRandomLocation(plugin); // <-- FIX 1
+            if (breachLocation != null) {
+                activeBreaches.add(breachLocation);
+                createBreach(breachLocation, area.getDisplayName());
+            }
+        }
+
+        if (activeBreaches.isEmpty()) {
+            plugin.getLogger().severe("§cImpossible de créer des brèches! Événement annulé.");
+            forceEnd();
+            return;
+        }
+
+        // Annonces
+        Bukkit.broadcastMessage("§5§l🌀 ALERTE BRÈCHE DIMENSIONNELLE ! 🌀");
+        Bukkit.broadcastMessage("§d§l" + activeBreaches.size() + " brèches détectées !");
+        Bukkit.broadcastMessage("§7§lObjectif: §cContenir §4" + mobsToContain + " entités§7!");
+        Bukkit.broadcastMessage("§7§lLieux: " + getBreachLocationNames());
+
+        // Programmer les vagues de monstres
+        scheduleMonsterWaves();
+
+        // Programmer les alertes de temps
+        scheduleTimeAlerts();
     }
 
-    private void spawnWaveMonsters() {
-        int mobCount = 5 + (currentWave * 3); // Plus de mobs par vague
-        String[] mobTypes = {"zombie_warrior", "skeleton_archer", "spider_venomous", "enderman_shadow", "witch_cursed"};
+    /**
+     * Récupère les zones de brèche depuis la configuration
+     */
+    private List<EventConfigManager.EventLocationConfig> getBreachAreas() {
+        // REFACTORED: Remove hardcoded logic and use the config manager
+        return configManager.getEventLocationConfigs("breach-areas");
+    }
+
+    /**
+     * Calcule le nombre de monstres à contenir selon le nombre de joueurs
+     */
+    private int calculateMobsToContain() {
+        int onlinePlayers = Bukkit.getOnlinePlayers().size();
+        int baseMobs = configManager.getEventsConfig().getInt("event-settings.breach_containment.base-mobs", 30);
+        int mobsPerPlayer = configManager.getEventsConfig().getInt("event-settings.breach_containment.mobs-per-player", 3);
+        int playerThreshold = configManager.getEventsConfig().getInt("event-settings.breach_containment.player-threshold", 5);
+
+        int additionalMobs = Math.max(0, (onlinePlayers - playerThreshold) * mobsPerPlayer);
+        return baseMobs + additionalMobs;
+    }
+
+    /**
+     * Crée une brèche à l'emplacement spécifié
+     */
+    private void createBreach(Location location, String areaName) {
+        if (location.getWorld() == null) return;
+        // Effets visuels de la brèche
+        location.getWorld().spawnParticle(Particle.PORTAL, location, 100, 3, 3, 3, 1.0);
+        location.getWorld().spawnParticle(Particle.DRAGON_BREATH, location, 50, 2, 2, 2, 0.1);
+
+        // Son dramatique
+        for (Player player : location.getWorld().getPlayers()) {
+            if (player.getLocation().distanceSquared(location) < 10000) { // 100 blocks
+                player.playSound(location, Sound.ENTITY_ENDERMAN_SCREAM, 1.0f, 0.5f);
+            }
+        }
+
+        plugin.getLogger().info("§5[BRÈCHE] Brèche créée à " + areaName +
+                " (" + location.getBlockX() + ", " + location.getBlockY() + ", " + location.getBlockZ() + ")");
+    }
+
+    /**
+     * Récupère les noms des localisations des brèches
+     */
+    private String getBreachLocationNames() {
+        List<String> names = new ArrayList<>();
+        for (int i = 0; i < activeBreaches.size(); i++) {
+            names.add("Zone " + (i + 1)); // Placeholder name, could be improved
+        }
+        return String.join("§7, §e", names);
+    }
+
+    /**
+     * Programme les vagues de monstres
+     */
+    private void scheduleMonsterWaves() {
+        // Vagues programmées
+        new BukkitRunnable() {
+            int waveNumber = 1;
+
+            @Override
+            public void run() {
+                if (!isActive() || breachesContained) {
+                    cancel();
+                    return;
+                }
+                spawnWave(waveNumber);
+                waveNumber++;
+            }
+        }.runTaskTimer(plugin, 100L, 2400L); // Starts after 5s, then every 2 minutes
+    }
+
+    /**
+     * Fait apparaître une vague de monstres
+     */
+    private void spawnWave(int waveNumber) {
+        List<EventConfigManager.EventMobConfig> breachMobConfigs = getBreachMobConfigs();
+        if (breachMobConfigs.isEmpty()) {
+            plugin.getLogger().warning("Aucun monstre de brèche configuré ('breach-mobs')!");
+            return;
+        }
+
+        int mobsPerBreach = Math.min(8, 2 + waveNumber); // Starts at 3, caps at 8
+        boolean isIntensive = waveNumber > 4;
+
+        if (isIntensive) {
+            Bukkit.broadcastMessage("§c§l[BRÈCHE] §4§lVAGUE INTENSIVE " + (waveNumber - 4) + " ! Les brèches se déstabilisent !");
+        } else {
+            Bukkit.broadcastMessage("§5§l[BRÈCHE] §dVague " + waveNumber + " détectée !");
+        }
+
+        for (Location breachLocation : activeBreaches) {
+            spawnMobsAtBreach(breachLocation, mobsPerBreach, breachMobConfigs);
+            if (isIntensive && breachLocation.getWorld() != null) {
+                breachLocation.getWorld().spawnParticle(Particle.LAVA, breachLocation, 30, 2, 1, 2, 0);
+            }
+        }
+
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            player.playSound(player.getLocation(), isIntensive ? Sound.ENTITY_RAVAGER_ROAR : Sound.ENTITY_ZOMBIE_VILLAGER_CURE, 1.0f, isIntensive ? 0.5f : 0.7f);
+        }
+    }
+
+    /**
+     * Fait apparaître des monstres à une brèche
+     */
+    private void spawnMobsAtBreach(Location breachLocation, int mobCount, List<EventConfigManager.EventMobConfig> mobConfigs) {
+        if (breachLocation.getWorld() == null) return;
 
         for (int i = 0; i < mobCount; i++) {
+            EventConfigManager.EventMobConfig selectedMob = selectWeightedMob(mobConfigs);
+            if (selectedMob == null) continue;
+
+            double angle = ThreadLocalRandom.current().nextDouble() * 2 * Math.PI;
+            double distance = 3 + ThreadLocalRandom.current().nextDouble() * 7;
+
+            Location spawnLocation = breachLocation.clone().add(
+                    Math.cos(angle) * distance,
+                    1, // Spawn slightly above the ground
+                    Math.sin(angle) * distance
+            );
+
+            try {
+                LivingEntity mob = plugin.getMobManager().spawnCustomMob(selectedMob.getId(), spawnLocation);
+                if (mob != null) {
+                    mob.setMetadata("breach_mob", new FixedMetadataValue(plugin, true));
+                    mob.setMetadata("breach_event_id", new FixedMetadataValue(plugin, getId()));
+                    mob.setCustomNameVisible(true);
+                    spawnedMobs.add(mob);
+                    spawnLocation.getWorld().spawnParticle(Particle.PORTAL, spawnLocation.add(0, 1, 0), 20, 0.5, 0.5, 0.5, 0.5);
+                }
+            } catch (Exception e) {
+                plugin.getLogger().warning("Erreur lors du spawn du monstre de brèche " + selectedMob.getId() + ": " + e.getMessage());
+            }
+        }
+    }
+
+    private List<EventConfigManager.EventMobConfig> getBreachMobConfigs() {
+        return configManager.getEventMobsInCategory("breach-mobs");
+    }
+
+    private EventConfigManager.EventMobConfig selectWeightedMob(List<EventConfigManager.EventMobConfig> mobs) {
+        if (mobs.isEmpty()) return null;
+
+        int totalWeight = mobs.stream().mapToInt(EventConfigManager.EventMobConfig::getSpawnWeight).sum();
+        if (totalWeight <= 0) {
+            return mobs.get(ThreadLocalRandom.current().nextInt(mobs.size()));
+        }
+        int randomWeight = ThreadLocalRandom.current().nextInt(totalWeight);
+
+        int currentWeight = 0;
+        for (EventConfigManager.EventMobConfig mob : mobs) {
+            currentWeight += mob.getSpawnWeight();
+            if (randomWeight < currentWeight) {
+                return mob;
+            }
+        }
+        return mobs.get(0); // Fallback
+    }
+
+    /**
+     * Programme les alertes de temps
+     */
+    private void scheduleTimeAlerts() {
+        int totalDuration = this.duration; // <-- FIX 2
+
+        // Alerte à la moitié du temps
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (isActive() && !breachesContained) {
+                    int remaining = getRemainingMobs();
+                    Bukkit.broadcastMessage("§e§l[BRÈCHE] §7Mi-temps ! Encore §c" + remaining + " entités§7 à contenir !");
+                }
+            }
+        }.runTaskLater(plugin, (long) (totalDuration / 2) * 20L);
+
+        // Alerte finale
+        if (totalDuration > 300) {
             new BukkitRunnable() {
                 @Override
                 public void run() {
-                    String mobType = mobTypes[ThreadLocalRandom.current().nextInt(mobTypes.length)];
-                    Location spawnLoc = breachLocation.clone().add(
-                            ThreadLocalRandom.current().nextDouble(-10, 10),
-                            1,
-                            ThreadLocalRandom.current().nextDouble(-10, 10)
-                    );
-
-                    LivingEntity mob = plugin.getMobManager().spawnCustomMob(mobType, spawnLoc);
-                    if (mob != null) {
-                        mob.setMetadata("breach_mob", new FixedMetadataValue(plugin, true));
-                        mob.setMetadata("wave", new FixedMetadataValue(plugin, currentWave));
-                        spawnedMobs.add(mob);
-
-                        // Effets visuels de spawn
-                        spawnLoc.getWorld().spawnParticle(Particle.PORTAL, spawnLoc, 30, 1, 1, 1, 0.5);
-                        spawnLoc.getWorld().playSound(spawnLoc, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 0.8f);
+                    if (isActive() && !breachesContained) {
+                        Bukkit.broadcastMessage("§c§l[BRÈCHE] §4§lDERNIÈRES 5 MINUTES ! Les brèches vont se stabiliser !");
+                        for (Player player : Bukkit.getOnlinePlayers()) {
+                            player.playSound(player.getLocation(), Sound.BLOCK_END_PORTAL_SPAWN, 1.0f, 0.8f);
+                        }
                     }
                 }
-            }.runTaskLater(plugin, i * 20L); // 1 mob par seconde
+            }.runTaskLater(plugin, (totalDuration - 300) * 20L);
         }
     }
 
-    private void applyReputationModifiers() {
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            PrisonTycoonHook.ReputationLevel repLevel = prisonHook.getReputationLevel(player);
-
-            // Retirer les anciens effets
-            player.removePotionEffect(PotionEffectType.SPEED);
-            player.removePotionEffect(PotionEffectType.SLOWNESS);
-            player.removePotionEffect(PotionEffectType.WEAKNESS);
-            player.removePotionEffect(PotionEffectType.BLINDNESS);
-
-            switch (repLevel) {
-                case POSITIVE:
-                case VERY_POSITIVE:
-                    // Réputation positive: Bonus normaux
-                    player.sendMessage("§a§l[BRÈCHE] §7Votre bonne réputation vous donne des bonus !");
-                    break;
-
-                case NEUTRAL:
-                    // Neutre: Légères pénalités
-                    player.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, WAVE_DURATION * 20, 0));
-                    player.addPotionEffect(new PotionEffect(PotionEffectType.WEAKNESS, WAVE_DURATION * 20, 0));
-                    player.sendMessage("§7§l[BRÈCHE] §7Réputation neutre: légères pénalités appliquées.");
-                    break;
-
-                case NEGATIVE:
-                    // Réputation négative: Pénalités moyennes
-                    player.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, WAVE_DURATION * 20, 1));
-                    player.addPotionEffect(new PotionEffect(PotionEffectType.WEAKNESS, WAVE_DURATION * 20, 1));
-                    player.sendMessage("§c§l[BRÈCHE] §7Mauvaise réputation: pénalités moyennes appliquées.");
-                    break;
-
-                case VERY_NEGATIVE:
-                    // Très négative: Pénalités sévères
-                    player.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, WAVE_DURATION * 20, 2));
-                    player.addPotionEffect(new PotionEffect(PotionEffectType.WEAKNESS, WAVE_DURATION * 20, 2));
-                    player.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, WAVE_DURATION * 20, 0));
-                    player.sendMessage("§4§l[BRÈCHE] §7Très mauvaise réputation: pénalités sévères appliquées !");
-                    break;
-            }
-        }
-    }
-
+    /**
+     * Gère la mort d'un monstre de brèche
+     */
     public void onMobKilled(LivingEntity mob, Player killer) {
-        if (!mob.hasMetadata("breach_mob")) return;
+        if (!spawnedMobs.remove(mob)) return;
 
-        int wave = mob.getMetadata("wave").getFirst().asInt();
-        int points = 5 + (wave * 5); // Plus de points pour les vagues tardives
-
-        eliminationScore.merge(killer.getUniqueId(), points, Integer::sum);
         addParticipant(killer);
+        mobKills.merge(killer.getUniqueId(), 1, Integer::sum);
+        totalMobsKilled++;
 
-        killer.sendMessage("§a§l[BRÈCHE] §7+" + points + " points (Élimination vague " + wave + ")");
+        if (mob.getLocation().getWorld() != null) {
+            mob.getLocation().getWorld().spawnParticle(Particle.SOUL_FIRE_FLAME, mob.getLocation().add(0, 1, 0), 10, 0.5, 0.5, 0.5, 0.05);
+        }
+        killer.playSound(killer.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.5f);
 
-        // Retirer de la liste
-        spawnedMobs.remove(mob);
+        int remaining = getRemainingMobs();
+        if (remaining > 0) {
+            if (remaining <= 10 || totalMobsKilled % 25 == 0) {
+                Bukkit.broadcastMessage("§5§l[BRÈCHE] §d" + totalMobsKilled + "§7/§c" + mobsToContain + " §7entités contenues");
+            }
+        } else {
+            onBreachesContained();
+        }
     }
 
-    public void onPlayerTakeDamage(Player player, double damage) {
-        if (!participants.contains(player.getUniqueId())) return;
+    /**
+     * Gère la réussite de l'événement
+     */
+    private void onBreachesContained() {
+        if (breachesContained) return;
+        breachesContained = true;
 
-        int protectionPoints = (int) damage;
-        protectionScore.merge(player.getUniqueId(), protectionPoints, Integer::sum);
+        Bukkit.broadcastMessage("\n§a§l🎉 BRÈCHES CONTENUES ! 🎉");
+        Bukkit.broadcastMessage("§2§lToutes les entités ont été neutralisées !");
+        Bukkit.broadcastMessage("§7§lParticipants: §f" + getParticipantCount() + "\n");
 
-        if (protectionPoints >= 10) {
-            player.sendMessage("§b§l[BRÈCHE] §7+" + protectionPoints + " points (Protection)");
+        closeAllBreaches();
+        distributeRewards();
+
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (isActive()) {
+                    forceEnd();
+                }
+            }
+        }.runTaskLater(plugin, 400L); // 20 secondes
+    }
+
+    /**
+     * Ferme toutes les brèches avec des effets
+     */
+    private void closeAllBreaches() {
+        for (Location breachLocation : activeBreaches) {
+            if (breachLocation.getWorld() == null) continue;
+            breachLocation.getWorld().spawnParticle(Particle.REVERSE_PORTAL, breachLocation, 150, 2, 2, 2, 0.2);
+            breachLocation.getWorld().playSound(breachLocation, Sound.ENTITY_GENERIC_EXPLODE, 0.7f, 1.5f);
+        }
+    }
+
+    /**
+     * Distribue les récompenses
+     */
+    private void distributeRewards() {
+        EventConfigManager.EventRewardConfig rewards = configManager.getEventRewards("breach_containment");
+        if (rewards == null) {
+            plugin.getLogger().warning("Aucune configuration de récompense pour breach_containment");
+            return;
+        }
+
+        int participationReward = rewards.getReward("participation");
+        int bonusPerKill = rewards.getReward("bonus-per-kill");
+        int topKillerBonus = rewards.getReward("top-killer-bonus");
+
+        UUID topKillerId = mobKills.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse(null);
+
+        for (UUID participantId : getParticipants()) {
+            Player participant = Bukkit.getPlayer(participantId);
+            if (participant != null && participant.isOnline()) {
+                double totalReward = participationReward;
+                int kills = mobKills.getOrDefault(participantId, 0);
+                totalReward += (double) kills * bonusPerKill;
+
+                if (participantId.equals(topKillerId)) {
+                    totalReward += topKillerBonus;
+                    participant.sendMessage("§a§l[RÉCOMPENSE] §2Bonus: Meilleur chasseur de brèche !");
+                }
+
+                if (totalReward > 0 && prisonHook != null) {
+                    prisonHook.addCoins(participant, (long) totalReward);
+                    participant.sendMessage("§5§l[BRÈCHE] §7Récompense: §a" + String.format("%.0f", totalReward) + "§7 pièces (§d" + kills + " kills§7)");
+                }
+            }
         }
     }
 
     @Override
     protected void onEnd() {
-        // Nettoyer les mobs restants
+        if (!breachesContained) {
+            Bukkit.broadcastMessage("§c§l[BRÈCHE] §7Temps écoulé! Les brèches se stabilisent naturellement...");
+            Bukkit.broadcastMessage("§7§l" + totalMobsKilled + "§7/§c" + mobsToContain + " §7entités neutralisées.");
+            closeAllBreaches();
+            distributeFallbackRewards();
+        }
+        cleanupRemainingMobs();
+    }
+
+    private void distributeFallbackRewards() {
+        EventConfigManager.EventRewardConfig rewards = configManager.getEventRewards("breach_containment");
+        if (rewards == null || prisonHook == null) return;
+
+        int participationReward = rewards.getReward("participation") / 2; // Reduced reward
+        int bonusPerKill = rewards.getReward("bonus-per-kill");
+
+        for (UUID participantId : getParticipants()) {
+            Player participant = Bukkit.getPlayer(participantId);
+            if (participant != null && participant.isOnline()) {
+                int kills = mobKills.getOrDefault(participantId, 0);
+                double totalReward = participationReward + ((double) kills * bonusPerKill);
+                if (totalReward > 0) {
+                    prisonHook.addCoins(participant, (long) totalReward);
+                    participant.sendMessage("§7§l[BRÈCHE] §7Récompense partielle: §7" + String.format("%.0f", totalReward) + "§7 pièces");
+                }
+            }
+        }
+    }
+
+    private void cleanupRemainingMobs() {
         for (LivingEntity mob : spawnedMobs) {
-            if (!mob.isDead()) {
-                mob.getWorld().spawnParticle(Particle.SMOKE, mob.getLocation(), 20);
+            if (mob != null && !mob.isDead()) {
                 mob.remove();
             }
         }
-
-        // Calculer les résultats
-        calculateResults();
-
-        // Distribuer les récompenses
-        distributeRewards();
-
-        Bukkit.broadcastMessage("§a§l[BRÈCHE] §2Brèche dimensionnelle contenue avec succès !");
-    }
-
-    private void calculateResults() {
-        // Créer le classement combiné
-        Map<UUID, Integer> totalScores = new HashMap<>();
-
-        for (UUID playerId : participants) {
-            int eliminations = eliminationScore.getOrDefault(playerId, 0);
-            int protection = protectionScore.getOrDefault(playerId, 0);
-            totalScores.put(playerId, eliminations + protection);
-        }
-
-        // Afficher le classement
-        List<Map.Entry<UUID, Integer>> ranking = totalScores.entrySet().stream()
-                .sorted(Map.Entry.<UUID, Integer>comparingByValue().reversed())
-                .toList();
-
-        Bukkit.broadcastMessage("§6§l=== RÉSULTATS BRÈCHE ===");
-        for (int i = 0; i < Math.min(3, ranking.size()); i++) {
-            UUID playerId = ranking.get(i).getKey();
-            int score = ranking.get(i).getValue();
-            Player player = Bukkit.getPlayer(playerId);
-            String name = player != null ? player.getName() : "Joueur déconnecté";
-
-            String medal = i == 0 ? "§6🥇" : i == 1 ? "§7🥈" : "§c🥉";
-            Bukkit.broadcastMessage(medal + " §e" + name + " §7- §a" + score + " points");
-        }
-    }
-
-    private void distributeRewards() {
-        boolean victory = currentWave >= WAVES_COUNT;
-
-        for (UUID playerId : participants) {
-            Player player = Bukkit.getPlayer(playerId);
-            if (player == null) continue;
-
-            // Récompenses de base
-            PrisonTycoonHook.EventReward reward = new PrisonTycoonHook.EventReward()
-                    .beacons(100 + ThreadLocalRandom.current().nextInt(150))
-                    .tokens(5000 + ThreadLocalRandom.current().nextInt(20000))
-                    .reputation(5, "Participation Brèche")
-                    .addItem(prisonHook.createKey("rare"));
-
-            // Bonus victoire
-            if (victory) {
-                reward.multiply(2.0)
-                        .addItem(prisonHook.createKey("legendary"))
-                        .beacons(reward.getBeacons() + 100);
-            }
-
-            // Bonus performance
-            int totalScore = eliminationScore.getOrDefault(playerId, 0) + protectionScore.getOrDefault(playerId, 0);
-            if (totalScore >= 500) {
-                reward.reputation(reward.getReputation() + 5, "Performance Brèche");
-            }
-
-            prisonHook.giveEventReward(player, reward);
-        }
-    }
-
-    private Location selectRandomMineLocation() {
-        // Logique pour sélectionner une mine aléatoire
-        // Pour l'exemple, on utilise le spawn du monde
-        return Bukkit.getWorlds().getFirst().getSpawnLocation();
-    }
-
-    private String getMineName(Location location) {
-        return "Test"; // À implémenter selon la logique des mines
-    }
-
-    private void createBreachEffects() {
-        BukkitTask effectTask = new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (!active) {
-                    cancel();
-                    return;
-                }
-
-                breachLocation.getWorld().spawnParticle(Particle.PORTAL, breachLocation, 50, 5, 5, 5, 1);
-                breachLocation.getWorld().playSound(breachLocation, Sound.BLOCK_PORTAL_AMBIENT, 2.0f, 0.5f);
-            }
-        }.runTaskTimer(plugin, 0L, 60L);
-
-        tasks.add(effectTask);
+        spawnedMobs.clear();
     }
 
     @Override
     protected void onCleanup() {
+        mobKills.clear();
+        activeBreaches.clear();
         spawnedMobs.clear();
-        eliminationScore.clear();
-        protectionScore.clear();
+        breachesContained = false;
+        totalMobsKilled = 0;
+    }
+
+    // GETTERS
+    public int getRemainingMobs() {
+        return Math.max(0, mobsToContain - totalMobsKilled);
     }
 }

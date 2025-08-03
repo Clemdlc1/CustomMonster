@@ -2,6 +2,7 @@ package fr.custommobs.events.types;
 
 import fr.custommobs.CustomMobsPlugin;
 import fr.custommobs.api.PrisonTycoonHook;
+import fr.custommobs.events.EventListener;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.Chest;
@@ -19,7 +20,7 @@ public class SupplyDropEvent extends ServerEvent {
     private final List<Location> dropLocations = new ArrayList<>();
     private final List<Block> droppedChests = new ArrayList<>();
 
-    public SupplyDropEvent(CustomMobsPlugin plugin, PrisonTycoonHook prisonHook, EventRewardsManager rewardsManager) {
+    public SupplyDropEvent(CustomMobsPlugin plugin, PrisonTycoonHook prisonHook, EventListener.EventRewardsManager rewardsManager) {
         super(plugin, prisonHook, rewardsManager, "supply_drop", "Largage d'Urgence",
                 EventType.COMPETITIVE, 10 * 60);
     }

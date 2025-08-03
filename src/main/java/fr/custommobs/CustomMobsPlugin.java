@@ -1,8 +1,10 @@
 package fr.custommobs;
 
 import fr.custommobs.api.PrisonTycoonHook;
+import fr.custommobs.commands.EventAdminCommand;
 import fr.custommobs.commands.LootConfigCommand;
 import fr.custommobs.commands.SpawnMobCommand;
+import fr.custommobs.events.EventConfigManager;
 import fr.custommobs.events.EventScheduler;
 import fr.custommobs.listeners.BossStatsListener;
 import fr.custommobs.listeners.MobControlListener;
@@ -24,6 +26,7 @@ public final class CustomMobsPlugin extends JavaPlugin {
     private BossStatsManager bossStatsManager;
     private PrisonTycoonHook prisonTycoonHook;
     private EventScheduler eventScheduler;
+    private EventConfigManager eventconfigManager;
 
     @Override
     public void onEnable() {
@@ -44,9 +47,7 @@ public final class CustomMobsPlugin extends JavaPlugin {
         // Enregistre les listeners
         registerListeners();
 
-        this.prisonTycoonHook = new PrisonTycoonHook(this);
-
-        this.eventScheduler = new EventScheduler(this);
+        PrisonTycoonHook.initialize(this);
 
         getLogger().info("CustomMobs plugin activé avec succès!");
         getLogger().info("Nombre de monstres enregistrés: " + mobManager.getRegisteredMobIds().size());
@@ -70,11 +71,14 @@ public final class CustomMobsPlugin extends JavaPlugin {
     }
 
     private void initializeManagers() {
+        eventconfigManager = new EventConfigManager(this);
         mobManager = new CustomMobManager(this);
         lootManager = new LootManager(this);
         spawnManager = new SpawnManager(this);
         bossBarManager = new BossBarManager(this);
         bossStatsManager = new BossStatsManager(this);
+        eventScheduler = new EventScheduler(this);
+
     }
 
     private void registerMobs() {
@@ -102,6 +106,7 @@ public final class CustomMobsPlugin extends JavaPlugin {
     private void registerCommands() {
         getCommand("lootconfig").setExecutor(new LootConfigCommand(this));
         getCommand("spawnmob").setExecutor(new SpawnMobCommand(this));
+        getCommand("eventadmin").setExecutor(new EventAdminCommand(this));
     }
 
     private void registerListeners() {
@@ -139,5 +144,11 @@ public final class CustomMobsPlugin extends JavaPlugin {
     public PrisonTycoonHook getPrisonTycoonHook() {
         return prisonTycoonHook;
     }
+
+    public EventScheduler getEventScheduler() {
+        return eventScheduler;
+    }
+
+    public EventConfigManager getConfigManager() {return eventconfigManager;}
 
 }

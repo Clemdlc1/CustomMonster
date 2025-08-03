@@ -2,6 +2,7 @@ package fr.custommobs.managers;
 
 import fr.custommobs.CustomMobsPlugin;
 import fr.custommobs.mobs.CustomMob;
+import fr.custommobs.events.types.DailyBossEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -14,16 +15,24 @@ import org.bukkit.scheduler.BukkitRunnable;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * Gestionnaire de statistiques de boss amélioré avec intégration événements
+ */
 public class BossStatsManager {
 
     private final CustomMobsPlugin plugin;
 
     // Stockage des statistiques par combat de boss
     private final Map<String, BossFightStats> activeBossFights; // bossUUID -> stats
+    private final Map<String, List<BossFightStats>> completedFights; // eventId -> historique
 
     public BossStatsManager(CustomMobsPlugin plugin) {
         this.plugin = plugin;
         this.activeBossFights = new HashMap<>();
+        this.completedFights = new HashMap<>();
+
+        // Nettoyer les combats abandonnés toutes les 10 minutes
+        startCleanupTask();
     }
 
     /**
@@ -40,13 +49,29 @@ public class BossStatsManager {
                 return;
             }
 
-            activeBossFights.put(bossId, new BossFightStats(mobId, bossName));
-            plugin.getLogger().info("Début du tracking pour le boss: " + mobId + " (" + bossName + ") UUID: " + bossId);
+            BossFightStats stats = new BossFightStats(mobId, bossName);
+            activeBossFights.put(bossId, stats);
+
+            plugin.getLogger().info("§6[BOSS STATS] Début du tracking pour: " + mobId + " (" + bossName + ")");
 
             // Annonce le début du combat
             announceBossFightStart(bossName);
         } else {
             plugin.getLogger().warning("Tentative de tracking d'un non-boss: " + mobId);
+        }
+    }
+
+    /**
+     * Démarre le tracking spécifiquement pour un événement
+     */
+    public void startBossFightForEvent(LivingEntity boss, String mobId, String eventId) {
+        startBossFight(boss, mobId);
+
+        String bossId = boss.getUniqueId().toString();
+        BossFightStats stats = activeBossFights.get(bossId);
+        if (stats != null) {
+            stats.setEventId(eventId);
+            plugin.getLogger().info("§6[BOSS STATS] Combat associé à l'événement: " + eventId);
         }
     }
 
@@ -58,12 +83,17 @@ public class BossStatsManager {
         BossFightStats stats = activeBossFights.get(bossId);
         if (stats != null) {
             stats.addDamageToBoss(player, damage);
-            plugin.getLogger().fine("Dégâts au boss enregistrés: " + player.getName() + " -> " + damage + " (Total: " + stats.damageToBoss.getOrDefault(player.getUniqueId(), 0.0) + ")");
+            stats.updateLastActivity();
+
+            plugin.getLogger().fine("§6[BOSS STATS] Dégâts enregistrés: " + player.getName() +
+                    " -> " + damage + " (Total: " + stats.damageToBoss.getOrDefault(player.getUniqueId(), 0.0) + ")");
         } else {
-            plugin.getLogger().warning("Dégâts au boss non enregistrés - boss non tracké: " + bossId);
-            // Tente de redémarrer le tracking
+            plugin.getLogger().fine("§7[BOSS STATS] Dégâts non trackés - boss non enregistré: " + bossId);
+
+            // Tenter de redémarrer le tracking automatiquement
             String mobId = CustomMob.getCustomMobId(boss);
             if (isBoss(mobId)) {
+                plugin.getLogger().info("§6[BOSS STATS] Redémarrage automatique du tracking pour: " + mobId);
                 startBossFight(boss, mobId);
                 recordDamageToBoss(boss, player, damage); // Réessaie
             }
@@ -78,15 +108,11 @@ public class BossStatsManager {
         BossFightStats stats = activeBossFights.get(bossId);
         if (stats != null) {
             stats.addDamageFromBoss(player, damage);
-            plugin.getLogger().fine("Dégâts du boss enregistrés: " + player.getName() + " <- " + damage);
+            stats.updateLastActivity();
+
+            plugin.getLogger().fine("§6[BOSS STATS] Dégâts du boss enregistrés: " + player.getName() + " <- " + damage);
         } else {
-            plugin.getLogger().warning("Dégâts du boss non enregistrés - boss non tracké: " + bossId);
-            // Tente de redémarrer le tracking
-            String mobId = CustomMob.getCustomMobId(boss);
-            if (isBoss(mobId)) {
-                startBossFight(boss, mobId);
-                recordDamageFromBoss(boss, player, damage); // Réessaie
-            }
+            plugin.getLogger().fine("§7[BOSS STATS] Dégâts du boss non trackés - boss non enregistré: " + bossId);
         }
     }
 
@@ -98,9 +124,11 @@ public class BossStatsManager {
         BossFightStats stats = activeBossFights.get(bossId);
         if (stats != null) {
             stats.addMinionKill(player, minionType);
-            plugin.getLogger().fine("Sbire tué enregistré: " + player.getName() + " -> " + minionType);
+            stats.updateLastActivity();
+
+            plugin.getLogger().fine("§6[BOSS STATS] Sbire tué: " + player.getName() + " -> " + minionType);
         } else {
-            plugin.getLogger().warning("Mort de sbire non enregistrée - boss non tracké: " + bossId);
+            plugin.getLogger().fine("§7[BOSS STATS] Mort de sbire non trackée - boss non enregistré: " + bossId);
         }
     }
 
@@ -112,87 +140,95 @@ public class BossStatsManager {
         BossFightStats stats = activeBossFights.get(bossId);
         if (stats != null) {
             stats.addPlayerDeath(player);
-            plugin.getLogger().fine("Mort de joueur enregistrée: " + player.getName());
+            stats.updateLastActivity();
+
+            plugin.getLogger().fine("§6[BOSS STATS] Mort de joueur: " + player.getName());
         } else {
-            plugin.getLogger().warning("Mort de joueur non enregistrée - boss non tracké: " + bossId);
+            plugin.getLogger().fine("§7[BOSS STATS] Mort de joueur non trackée - boss non enregistré: " + bossId);
         }
     }
 
     /**
-     * Termine un combat de boss et affiche les résultats
+     * Termine un combat de boss
      */
     public void endBossFight(LivingEntity boss, boolean victory) {
         String bossId = boss.getUniqueId().toString();
-        BossFightStats stats = activeBossFights.get(bossId);
+        BossFightStats stats = activeBossFights.remove(bossId);
 
         if (stats != null) {
-            plugin.getLogger().info("Fin du combat de boss: " + stats.bossName + " (Victoire: " + victory + ") UUID: " + bossId);
+            stats.endFight(victory);
 
-            // Délai de 2 secondes pour que les joueurs voient d'abord la mort du boss
+            // Ajouter à l'historique
+            String eventId = stats.getEventId() != null ? stats.getEventId() : "manual";
+            completedFights.computeIfAbsent(eventId, k -> new ArrayList<>()).add(stats);
+
+            plugin.getLogger().info("§6[BOSS STATS] Combat terminé: " + stats.bossName +
+                    " - " + (victory ? "VICTOIRE" : "DÉFAITE"));
+
+            // Afficher les résultats après un délai
             new BukkitRunnable() {
                 @Override
                 public void run() {
                     displayResults(stats, victory);
-                    if (victory) {
-                        distributeRewards(stats);
-                    }
-                    activeBossFights.remove(bossId);
-                    plugin.getLogger().info("Stats du boss supprimées: " + bossId);
                 }
-            }.runTaskLater(plugin, 40L); // 2 secondes
+            }.runTaskLater(plugin, 40L); // 2 secondes de délai
+
         } else {
-            plugin.getLogger().warning("Aucune stats trouvées pour le boss: " + bossId);
-            plugin.getLogger().info("Boss actifs trackés: " + activeBossFights.keySet());
+            plugin.getLogger().warning("§7[BOSS STATS] Tentative de fin de combat pour boss non tracké: " + bossId);
 
-            // Affiche quand même un message de victoire basique
-            if (victory) {
-                String mobId = CustomMob.getCustomMobId(boss);
-                String bossName = boss.getCustomName() != null ? boss.getCustomName() : getBossDisplayName(mobId);
-
-                new BukkitRunnable() {
-                    @Override
-                    public void run() {
-                        Bukkit.broadcastMessage("");
-                        Bukkit.broadcastMessage("§6§l▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
-                        Bukkit.broadcastMessage("§6§l▓▓§e§l        BOSS VAINCU !        §6§l▓▓");
-                        Bukkit.broadcastMessage("§6§l▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
-                        Bukkit.broadcastMessage("§e§lBoss: " + bossName);
-                        Bukkit.broadcastMessage("§a§lRésultat: §2§lVICTOIRE ! ✓");
-                        Bukkit.broadcastMessage("§7§oLes statistiques n'ont pas pu être trackées");
-                        Bukkit.broadcastMessage("§6§l▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
-                        Bukkit.broadcastMessage("");
-                    }
-                }.runTaskLater(plugin, 40L);
-            }
+            // Affichage générique si pas de stats
+            String bossName = boss.getCustomName() != null ? boss.getCustomName() : "Boss Inconnu";
+            new BukkitRunnable() {
+                @Override
+                public void run() {
+                    displayGenericResults(bossName, victory);
+                }
+            }.runTaskLater(plugin, 40L);
         }
+    }
+
+    /**
+     * Récupère les statistiques d'un combat actif
+     */
+    public BossFightStats getActiveBossFight(LivingEntity boss) {
+        String bossId = boss.getUniqueId().toString();
+        return activeBossFights.get(bossId);
+    }
+
+    /**
+     * Récupère l'historique des combats pour un événement
+     */
+    public List<BossFightStats> getEventHistory(String eventId) {
+        return completedFights.getOrDefault(eventId, new ArrayList<>());
+    }
+
+    /**
+     * Récupère tous les combats actifs
+     */
+    public Collection<BossFightStats> getActiveFights() {
+        return new ArrayList<>(activeBossFights.values());
     }
 
     /**
      * Méthode pour débugger les boss actifs
      */
     public void debugActiveBosses() {
-        plugin.getLogger().info("=== DEBUG BOSS STATS ===");
-        plugin.getLogger().info("Nombre de boss actifs: " + activeBossFights.size());
+        plugin.getLogger().info("§6=== DEBUG BOSS STATS ===");
+        plugin.getLogger().info("§6Nombre de boss actifs: " + activeBossFights.size());
+
         for (Map.Entry<String, BossFightStats> entry : activeBossFights.entrySet()) {
             BossFightStats stats = entry.getValue();
-            plugin.getLogger().info("Boss: " + entry.getKey() + " -> " + stats.bossName + " (" + stats.mobId + ")");
-            plugin.getLogger().info("  Participants: " + getAllParticipants(stats).size());
-            plugin.getLogger().info("  Dégâts totaux: " + stats.damageToBoss.values().stream().mapToDouble(Double::doubleValue).sum());
-        }
-        plugin.getLogger().info("=========================");
-    }
+            Set<UUID> participants = getAllParticipants(stats);
+            double totalDamage = stats.damageToBoss.values().stream().mapToDouble(Double::doubleValue).sum();
 
-    /**
-     * Annonce le début d'un combat de boss
-     */
-    private void announceBossFightStart(String bossName) {
-        Bukkit.broadcastMessage("");
-        Bukkit.broadcastMessage("§4§l⚔═══════════════════════════════════⚔");
-        Bukkit.broadcastMessage("§6§l        COMBAT DE BOSS COMMENCÉ !");
-        Bukkit.broadcastMessage("§e§l           " + bossName);
-        Bukkit.broadcastMessage("§6§l      Les statistiques sont trackées !");
-        Bukkit.broadcastMessage("§4§l⚔═══════════════════════════════════⚔");
-        Bukkit.broadcastMessage("");
+            plugin.getLogger().info("§6Boss: " + entry.getKey() + " -> " + stats.bossName + " (" + stats.mobId + ")");
+            plugin.getLogger().info("§6  Event: " + (stats.getEventId() != null ? stats.getEventId() : "Manual"));
+            plugin.getLogger().info("§6  Participants: " + participants.size());
+            plugin.getLogger().info("§6  Dégâts totaux: " + String.format("%.1f", totalDamage));
+            plugin.getLogger().info("§6  Durée: " + formatDuration(System.currentTimeMillis() - stats.startTime));
+        }
+
+        plugin.getLogger().info("§6=========================");
     }
 
     /**
@@ -202,7 +238,7 @@ public class BossStatsManager {
         Set<UUID> participants = getAllParticipants(stats);
 
         if (participants.isEmpty()) {
-            Bukkit.broadcastMessage("§e[BOSS] Combat terminé mais aucune statistique enregistrée.");
+            displayGenericResults(stats.bossName, victory);
             return;
         }
 
@@ -211,263 +247,131 @@ public class BossStatsManager {
         Bukkit.broadcastMessage("§6§l▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
         Bukkit.broadcastMessage("§6§l▓▓§e§l      RÉSULTATS DU COMBAT      §6§l▓▓");
         Bukkit.broadcastMessage("§6§l▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
+
         Bukkit.broadcastMessage("§e§lBoss: " + stats.bossName);
-        Bukkit.broadcastMessage("§a§lRésultat: " + (victory ? "§2§lVICTOIRE ! ✓" : "§4§lDÉFAITE ✗"));
-        Bukkit.broadcastMessage("§e§lDurée: " + formatDuration(stats.getDuration()));
-        Bukkit.broadcastMessage("§e§lParticipants: §f" + participants.size());
-        Bukkit.broadcastMessage("");
+        Bukkit.broadcastMessage("§a§lRésultat: " + (victory ? "§2§lVICTOIRE ! ✓" : "§c§lDÉFAITE ✗"));
+        Bukkit.broadcastMessage("§7§lDurée: §f" + formatDuration(stats.getDuration()));
+        Bukkit.broadcastMessage("§7§lParticipants: §f" + participants.size());
 
-        // TOP 3 DPS
-        Bukkit.broadcastMessage("§c§l⚔ TOP DPS (Dégâts infligés) ⚔");
-        List<Map.Entry<UUID, Double>> topDps = stats.damageToBoss.entrySet().stream()
-                .sorted(Map.Entry.<UUID, Double>comparingByValue().reversed())
-                .limit(3)
-                .collect(Collectors.toList());
-
-        if (topDps.isEmpty()) {
-            Bukkit.broadcastMessage("  §7Aucun dégât enregistré");
-        } else {
-            for (int i = 0; i < topDps.size(); i++) {
-                Player player = Bukkit.getPlayer(topDps.get(i).getKey());
-                String playerName = player != null ? player.getName() : "Joueur Inconnu";
-                String medal = i == 0 ? "§6🥇" : i == 1 ? "§7🥈" : "§c🥉";
-                Bukkit.broadcastMessage("  " + medal + " §e" + playerName + " §7- §c" +
-                        String.format("%.1f", topDps.get(i).getValue()) + " dégâts");
-            }
+        if (stats.getEventId() != null) {
+            Bukkit.broadcastMessage("§7§lÉvénement: §f" + stats.getEventId());
         }
 
         Bukkit.broadcastMessage("");
 
-        // TOP 3 TANK (Dégâts subis)
-        Bukkit.broadcastMessage("§9§l🛡 TOP TANK (Dégâts encaissés) 🛡");
-        List<Map.Entry<UUID, Double>> topTank = stats.damageFromBoss.entrySet().stream()
-                .sorted(Map.Entry.<UUID, Double>comparingByValue().reversed())
-                .limit(3)
-                .collect(Collectors.toList());
+        // Top 3 DPS
+        displayTopDamageDealer(stats);
 
-        if (topTank.isEmpty()) {
-            Bukkit.broadcastMessage("  §7Aucun dégât subi enregistré");
-        } else {
-            for (int i = 0; i < topTank.size(); i++) {
-                Player player = Bukkit.getPlayer(topTank.get(i).getKey());
-                String playerName = player != null ? player.getName() : "Joueur Inconnu";
-                String medal = i == 0 ? "§6🥇" : i == 1 ? "§7🥈" : "§c🥉";
-                Bukkit.broadcastMessage("  " + medal + " §e" + playerName + " §7- §9" +
-                        String.format("%.1f", topTank.get(i).getValue()) + " dégâts subis");
-            }
-        }
-
-        Bukkit.broadcastMessage("");
-
-        // TOP 3 SLAYER (Sbires tués)
-        Bukkit.broadcastMessage("§5§l⚡ TOP SLAYER (Sbires éliminés) ⚡");
-        List<Map.Entry<UUID, Integer>> topSlayer = stats.minionKills.entrySet().stream()
-                .sorted(Map.Entry.<UUID, Integer>comparingByValue().reversed())
-                .limit(3)
-                .collect(Collectors.toList());
-
-        if (topSlayer.isEmpty()) {
-            Bukkit.broadcastMessage("  §7Aucun sbire éliminé");
-        } else {
-            for (int i = 0; i < topSlayer.size(); i++) {
-                Player player = Bukkit.getPlayer(topSlayer.get(i).getKey());
-                String playerName = player != null ? player.getName() : "Joueur Inconnu";
-                String medal = i == 0 ? "§6🥇" : i == 1 ? "§7🥈" : "§c🥉";
-                Bukkit.broadcastMessage("  " + medal + " §e" + playerName + " §7- §5" +
-                        topSlayer.get(i).getValue() + " sbires");
-            }
-        }
-
-        // MVP GLOBAL
-        Player mvp = determineMVP(stats);
-        if (mvp != null) {
-            Bukkit.broadcastMessage("");
-            Bukkit.broadcastMessage("§6§l★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★");
-            Bukkit.broadcastMessage("§6§l★★★§e§l      MVP DU COMBAT      §6§l★★★");
-            Bukkit.broadcastMessage("§6§l★§e§l  " + mvp.getName() + " - Champion absolu !  §6§l★");
-            Bukkit.broadcastMessage("§6§l★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★");
-        }
-
-        // Statistiques générales
-        Bukkit.broadcastMessage("");
-        Bukkit.broadcastMessage("§e§l📊 STATISTIQUES GÉNÉRALES:");
-        double totalDamageDealt = stats.damageToBoss.values().stream().mapToDouble(Double::doubleValue).sum();
-        double totalDamageTaken = stats.damageFromBoss.values().stream().mapToDouble(Double::doubleValue).sum();
-        int totalMinionKills = stats.minionKills.values().stream().mapToInt(Integer::intValue).sum();
-        int totalDeaths = stats.playerDeaths.values().stream().mapToInt(Integer::intValue).sum();
-
-        Bukkit.broadcastMessage("  §7• Dégâts totaux infligés: §c" + String.format("%.1f", totalDamageDealt));
-        Bukkit.broadcastMessage("  §7• Dégâts totaux subis: §9" + String.format("%.1f", totalDamageTaken));
-        Bukkit.broadcastMessage("  §7• Sbires totaux éliminés: §5" + totalMinionKills);
-        Bukkit.broadcastMessage("  §7• Morts totales: §4" + totalDeaths);
+        // Statistiques diverses
+        displayMiscStats(stats);
 
         Bukkit.broadcastMessage("§6§l▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
         Bukkit.broadcastMessage("");
     }
 
     /**
-     * Détermine le MVP du combat
+     * Affiche le top des DPS
      */
-    private Player determineMVP(BossFightStats stats) {
-        Map<UUID, Double> mvpScores = new HashMap<>();
-
-        // Calcul du score MVP
-        for (UUID playerId : getAllParticipants(stats)) {
-            double score = 0;
-
-            // Points pour dégâts infligés (1 point par point de dégât)
-            score += stats.damageToBoss.getOrDefault(playerId, 0.0);
-
-            // Points pour sbires tués (50 points par sbire)
-            score += stats.minionKills.getOrDefault(playerId, 0) * 50;
-
-            // Bonus de survie (100 points si pas mort)
-            if (stats.playerDeaths.getOrDefault(playerId, 0) == 0) {
-                score += 100;
-            }
-
-            // Malus pour morts subies (pénalité légère)
-            score -= stats.playerDeaths.getOrDefault(playerId, 0) * 25;
-
-            mvpScores.put(playerId, score);
-        }
-
-        return mvpScores.entrySet().stream()
-                .max(Map.Entry.comparingByValue())
-                .map(entry -> Bukkit.getPlayer(entry.getKey()))
-                .orElse(null);
-    }
-
-    /**
-     * Distribue les récompenses selon les performances
-     */
-    private void distributeRewards(BossFightStats stats) {
-        // Récompenses pour le MVP
-        Player mvp = determineMVP(stats);
-        if (mvp != null) {
-            giveMVPReward(mvp, stats.mobId);
-        }
-
-        // Récompenses pour les TOP 3 DPS
-        List<UUID> topDps = stats.damageToBoss.entrySet().stream()
+    private void displayTopDamageDealer(BossFightStats stats) {
+        List<Map.Entry<UUID, Double>> topDamagers = stats.damageToBoss.entrySet().stream()
                 .sorted(Map.Entry.<UUID, Double>comparingByValue().reversed())
                 .limit(3)
-                .map(Map.Entry::getKey)
                 .collect(Collectors.toList());
 
-        for (int i = 0; i < topDps.size(); i++) {
-            Player player = Bukkit.getPlayer(topDps.get(i));
-            if (player != null) {
-                giveDPSReward(player, i + 1, stats.mobId);
+        if (!topDamagers.isEmpty()) {
+            Bukkit.broadcastMessage("§6§l🏆 TOP DÉGÂTS:");
+
+            String[] medals = {"§e§l🥇", "§7§l🥈", "§6§l🥉"};
+            for (int i = 0; i < topDamagers.size(); i++) {
+                Map.Entry<UUID, Double> entry = topDamagers.get(i);
+                Player player = Bukkit.getPlayer(entry.getKey());
+                String playerName = player != null ? player.getName() : "Joueur Déconnecté";
+
+                double damage = entry.getValue();
+                double dps = damage / (stats.getDuration() / 1000.0);
+
+                Bukkit.broadcastMessage(String.format("%s §f%s §7- §c%.1f §7dégâts (§e%.1f DPS§7)",
+                        medals[i], playerName, damage, dps));
             }
+            Bukkit.broadcastMessage("");
+        }
+    }
+
+    /**
+     * Affiche les statistiques diverses
+     */
+    private void displayMiscStats(BossFightStats stats) {
+        // Dégâts totaux infligés
+        double totalDamageDealt = stats.damageToBoss.values().stream().mapToDouble(Double::doubleValue).sum();
+        double totalDamageReceived = stats.damageFromBoss.values().stream().mapToDouble(Double::doubleValue).sum();
+
+        Bukkit.broadcastMessage("§7§l📊 STATISTIQUES:");
+        Bukkit.broadcastMessage("§7• Dégâts infligés: §c" + String.format("%.1f", totalDamageDealt));
+        Bukkit.broadcastMessage("§7• Dégâts subis: §c" + String.format("%.1f", totalDamageReceived));
+
+        // Morts
+        int totalDeaths = stats.playerDeaths.values().stream().mapToInt(Integer::intValue).sum();
+        if (totalDeaths > 0) {
+            Bukkit.broadcastMessage("§7• Morts de joueurs: §c" + totalDeaths);
         }
 
-        // Récompenses de participation pour tous
-        for (UUID playerId : getAllParticipants(stats)) {
-            Player player = Bukkit.getPlayer(playerId);
-            if (player != null) {
-                giveParticipationReward(player, stats.mobId);
+        // Sbires
+        int totalMinionKills = stats.minionKills.values().stream().mapToInt(Integer::intValue).sum();
+        if (totalMinionKills > 0) {
+            Bukkit.broadcastMessage("§7• Sbires éliminés: §a" + totalMinionKills);
+        }
+
+        Bukkit.broadcastMessage("");
+    }
+
+    /**
+     * Affiche des résultats génériques quand les stats ne sont pas disponibles
+     */
+    private void displayGenericResults(String bossName, boolean victory) {
+        Bukkit.broadcastMessage("");
+        Bukkit.broadcastMessage("§6§l▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
+        Bukkit.broadcastMessage("§6§l▓▓§e§l      RÉSULTATS DU COMBAT      §6§l▓▓");
+        Bukkit.broadcastMessage("§6§l▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
+        Bukkit.broadcastMessage("§e§lBoss: " + bossName);
+        Bukkit.broadcastMessage("§a§lRésultat: " + (victory ? "§2§lVICTOIRE ! ✓" : "§c§lDÉFAITE ✗"));
+        Bukkit.broadcastMessage("§7§oLes statistiques détaillées n'ont pas pu être trackées");
+        Bukkit.broadcastMessage("§6§l▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
+        Bukkit.broadcastMessage("");
+    }
+
+    /**
+     * Démarre la tâche de nettoyage des combats abandonnés
+     */
+    private void startCleanupTask() {
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                cleanupAbandonedFights();
             }
-        }
+        }.runTaskTimer(plugin, 12000L, 12000L); // Toutes les 10 minutes
     }
 
     /**
-     * Récompense MVP
+     * Nettoie les combats abandonnés (boss morts sans notification)
      */
-    private void giveMVPReward(Player player, String mobId) {
-        // Titre MVP
-        player.sendTitle("§6§lMVP !", "§eChampion du combat !", 10, 70, 20);
+    private void cleanupAbandonedFights() {
+        long currentTime = System.currentTimeMillis();
+        Iterator<Map.Entry<String, BossFightStats>> iterator = activeBossFights.entrySet().iterator();
 
-        // Items spéciaux selon le boss
-        switch (mobId) {
-            case "wither_boss":
-                giveItem(player, new ItemStack(Material.NETHER_STAR, 3), "§5Étoile du Néant §7(MVP)");
-                giveItem(player, new ItemStack(Material.BEACON, 1), "§6Phare de Victoire §7(MVP)");
-                break;
-            case "warden_boss":
-                giveItem(player, new ItemStack(Material.ECHO_SHARD, 5), "§0Éclat des Abysses §7(MVP)");
-                giveItem(player, new ItemStack(Material.SCULK_CATALYST, 2), "§8Catalyseur Sculk §7(MVP)");
-                break;
-            case "ravager_boss":
-                giveItem(player, new ItemStack(Material.TOTEM_OF_UNDYING, 2), "§cTotem de Bravoure §7(MVP)");
-                giveItem(player, new ItemStack(Material.DIAMOND, 16), "§bDiamants de Victoire §7(MVP)");
-                break;
-            case "necromancer_dark":
-                giveItem(player, new ItemStack(Material.WITHER_SKELETON_SKULL, 2), "§5Crâne de Nécromancie §7(MVP)");
-                giveItem(player, new ItemStack(Material.NETHERITE_INGOT, 3), "§8Lingot Maudit §7(MVP)");
-                break;
-            case "dragon_fire":
-                giveItem(player, new ItemStack(Material.DRAGON_BREATH, 5), "§4Souffle de Dragon §7(MVP)");
-                giveItem(player, new ItemStack(Material.BLAZE_ROD, 8), "§6Bâton de Flammes §7(MVP)");
-                break;
-            case "geode_aberration":
-                giveItem(player, new ItemStack(Material.AMETHYST_SHARD, 12), "§dÉclat Cristallin §7(MVP)");
-                giveItem(player, new ItemStack(Material.AMETHYST_BLOCK, 3), "§5Bloc d'Améthyste §7(MVP)");
-                break;
-            default:
-                giveItem(player, new ItemStack(Material.DIAMOND, 10), "§bRécompense MVP §7(MVP)");
-        }
+        while (iterator.hasNext()) {
+            Map.Entry<String, BossFightStats> entry = iterator.next();
+            BossFightStats stats = entry.getValue();
 
-        player.sendMessage("§6§l[MVP] §eVous avez reçu des récompenses spéciales !");
-    }
+            // Si pas d'activité depuis 15 minutes
+            if (currentTime - stats.getLastActivity() > 900000) {
+                plugin.getLogger().info("§7[BOSS STATS] Nettoyage du combat abandonné: " + stats.bossName);
+                iterator.remove();
 
-    /**
-     * Récompense DPS
-     */
-    private void giveDPSReward(Player player, int rank, String mobId) {
-        String rankName = switch (rank) {
-            case 1 -> "§6Or";
-            case 2 -> "§7Argent";
-            case 3 -> "§cBronze";
-            default -> "§eDPS";
-        };
-
-        int amount = switch (rank) {
-            case 1 -> 8;
-            case 2 -> 5;
-            case 3 -> 3;
-            default -> 1;
-        };
-
-        giveItem(player, new ItemStack(Material.GOLD_INGOT, amount), "§6Médaille " + rankName + " DPS");
-        player.sendMessage("§c⚔ §eVous avez terminé " + rank + (rank == 1 ? "er" : "ème") + " en DPS !");
-    }
-
-    /**
-     * Récompense de participation
-     */
-    private void giveParticipationReward(Player player, String mobId) {
-        // XP bonus
-        player.giveExp(100 + (int)(Math.random() * 100));
-
-        // Items de base
-        giveItem(player, new ItemStack(Material.EMERALD, 3), "§aGemme de Participation");
-
-        // Chance d'item bonus
-        if (Math.random() < 0.3) { // 30% de chance
-            Material[] bonusItems = {Material.ENCHANTED_GOLDEN_APPLE, Material.DIAMOND, Material.NETHERITE_SCRAP};
-            Material bonus = bonusItems[(int)(Math.random() * bonusItems.length)];
-            giveItem(player, new ItemStack(bonus, 1), "§dBonus de Chance");
-            player.sendMessage("§d✨ Bonus de chance obtenu !");
-        }
-    }
-
-    /**
-     * Donne un item avec un nom custom
-     */
-    private void giveItem(Player player, ItemStack item, String name) {
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(name);
-            meta.setLore(Arrays.asList("§7Obtenu lors d'un combat de boss", "§7" + new Date().toString()));
-            item.setItemMeta(meta);
-        }
-
-        if (player.getInventory().firstEmpty() != -1) {
-            player.getInventory().addItem(item);
-        } else {
-            player.getWorld().dropItemNaturally(player.getLocation(), item);
-            player.sendMessage("§e⚠ Item droppé au sol (inventaire plein) !");
+                // Ajouter à l'historique comme défaite
+                stats.endFight(false);
+                String eventId = stats.getEventId() != null ? stats.getEventId() : "abandoned";
+                completedFights.computeIfAbsent(eventId, k -> new ArrayList<>()).add(stats);
+            }
         }
     }
 
@@ -500,10 +404,8 @@ public class BossStatsManager {
         if (mobId == null) return false;
 
         // Boss explicites
-        if (mobId.contains("boss")) {
-            return true;
-        }
-        return false;
+        return mobId.contains("boss") || mobId.contains("dragon") || mobId.contains("warden") ||
+                mobId.contains("wither") || mobId.contains("ravager") || mobId.contains("necromancer");
     }
 
     /**
@@ -517,17 +419,34 @@ public class BossStatsManager {
             case "necromancer_dark" -> "§5§lArchiliche";
             case "dragon_fire" -> "§4§lDrake Cendré";
             case "geode_aberration" -> "§d§lAberration Géodique";
-            default -> "§6§lBoss Mystérieux";
+            default -> "§6§lBoss " + mobId.replace("_", " ");
         };
     }
 
     /**
-     * Classe interne pour stocker les statistiques d'un combat
+     * Annonce le début d'un combat de boss
      */
-    private static class BossFightStats {
+    private void announceBossFightStart(String bossName) {
+        Bukkit.broadcastMessage("");
+        Bukkit.broadcastMessage("§4§l⚔═══════════════════════════════════⚔");
+        Bukkit.broadcastMessage("§6§l        COMBAT DE BOSS COMMENCÉ !");
+        Bukkit.broadcastMessage("§e§l           " + bossName);
+        Bukkit.broadcastMessage("§6§l      Les statistiques sont trackées !");
+        Bukkit.broadcastMessage("§4§l⚔═══════════════════════════════════⚔");
+        Bukkit.broadcastMessage("");
+    }
+
+    /**
+     * Classe interne améliorée pour stocker les statistiques d'un combat
+     */
+    public static class BossFightStats {
         public final String mobId;
         public final String bossName;
         public final long startTime;
+        private long endTime;
+        private long lastActivity;
+        private String eventId;
+        private boolean victory;
 
         public final Map<UUID, Double> damageToBoss = new HashMap<>();
         public final Map<UUID, Double> damageFromBoss = new HashMap<>();
@@ -536,28 +455,63 @@ public class BossStatsManager {
 
         public BossFightStats(String mobId, String bossName) {
             this.mobId = mobId;
-            this.bossName = bossName != null ? bossName : mobId;
+            this.bossName = bossName != null ? bossName : "Boss Inconnu";
             this.startTime = System.currentTimeMillis();
+            this.lastActivity = this.startTime;
         }
 
         public void addDamageToBoss(Player player, double damage) {
             damageToBoss.merge(player.getUniqueId(), damage, Double::sum);
+            updateLastActivity();
         }
 
         public void addDamageFromBoss(Player player, double damage) {
             damageFromBoss.merge(player.getUniqueId(), damage, Double::sum);
+            updateLastActivity();
         }
 
         public void addMinionKill(Player player, String minionType) {
             minionKills.merge(player.getUniqueId(), 1, Integer::sum);
+            updateLastActivity();
         }
 
         public void addPlayerDeath(Player player) {
             playerDeaths.merge(player.getUniqueId(), 1, Integer::sum);
+            updateLastActivity();
         }
 
+        public void endFight(boolean victory) {
+            this.endTime = System.currentTimeMillis();
+            this.victory = victory;
+        }
+
+        public void updateLastActivity() {
+            this.lastActivity = System.currentTimeMillis();
+        }
+
+        public void setEventId(String eventId) {
+            this.eventId = eventId;
+        }
+
+        // Getters
         public long getDuration() {
-            return System.currentTimeMillis() - startTime;
+            return (endTime > 0 ? endTime : System.currentTimeMillis()) - startTime;
+        }
+
+        public long getLastActivity() {
+            return lastActivity;
+        }
+
+        public String getEventId() {
+            return eventId;
+        }
+
+        public boolean isVictory() {
+            return victory;
+        }
+
+        public boolean isFinished() {
+            return endTime > 0;
         }
     }
 }

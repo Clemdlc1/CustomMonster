@@ -1,6 +1,7 @@
 package fr.custommobs.events;
 
 import fr.custommobs.CustomMobsPlugin;
+import fr.custommobs.api.PrisonTycoonHook;
 import fr.custommobs.events.types.*;
 import fr.custommobs.mobs.CustomMob;
 import org.bukkit.entity.LivingEntity;
@@ -135,5 +136,18 @@ public class EventListener implements Listener {
                 break;
             }
         }
+    }
+
+    // Classe pour gérer les récompenses (simplifiée pour l'exemple)
+    public static class EventRewardsManager {
+        private final CustomMobsPlugin plugin;
+        private final PrisonTycoonHook prisonHook;
+
+        public EventRewardsManager(CustomMobsPlugin plugin, PrisonTycoonHook prisonHook) {
+            this.plugin = plugin;
+            this.prisonHook = prisonHook;
+        }
+
+        // Méthodes pour créer et distribuer les récompenses
     }
 }

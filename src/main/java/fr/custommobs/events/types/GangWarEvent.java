@@ -2,6 +2,7 @@ package fr.custommobs.events.types;
 
 import fr.custommobs.CustomMobsPlugin;
 import fr.custommobs.api.PrisonTycoonHook;
+import fr.custommobs.events.EventListener;
 import org.bukkit.Bukkit;
 
 import java.util.HashMap;
@@ -13,7 +14,7 @@ public class GangWarEvent extends ServerEvent {
     private final Map<String, Integer> gangScores = new HashMap<>();
     private final Map<UUID, String> playerGangs = new HashMap<>();
 
-    public GangWarEvent(CustomMobsPlugin plugin, PrisonTycoonHook prisonHook, EventRewardsManager rewardsManager) {
+    public GangWarEvent(CustomMobsPlugin plugin, PrisonTycoonHook prisonHook, EventListener.EventRewardsManager rewardsManager) {
         super(plugin, prisonHook, rewardsManager, "gang_war", "Guerre des Gangs",
                 EventType.COMPETITIVE, 2 * 60 * 60); // 2 heures
     }

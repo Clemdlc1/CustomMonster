@@ -2,6 +2,7 @@ package fr.custommobs.events.types;
 
 import fr.custommobs.CustomMobsPlugin;
 import fr.custommobs.api.PrisonTycoonHook;
+import fr.custommobs.events.EventListener;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -17,7 +18,7 @@ public class CommunityChallenge extends ServerEvent {
     private final Map<String, Integer> progress = new HashMap<>();
     private final Map<UUID, Integer> individualContributions = new HashMap<>();
 
-    public CommunityChallenge(CustomMobsPlugin plugin, PrisonTycoonHook prisonHook, EventRewardsManager rewardsManager) {
+    public CommunityChallenge(CustomMobsPlugin plugin, PrisonTycoonHook prisonHook, EventListener.EventRewardsManager rewardsManager) {
         super(plugin, prisonHook, rewardsManager, "community_challenge", "Défi Communautaire",
                 EventType.COMMUNITY, 24 * 60 * 60); // 24 heures
     }

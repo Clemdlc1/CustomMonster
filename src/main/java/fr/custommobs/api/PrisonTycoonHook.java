@@ -2,10 +2,15 @@ package fr.custommobs.api;
 
 import fr.prisontycoon.api.PrisonTycoonAPI;
 import fr.custommobs.CustomMobsPlugin;
+import fr.prisontycoon.autominers.AutominerType;
+import fr.prisontycoon.boosts.BoostType;
+import fr.prisontycoon.vouchers.VoucherType;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.Plugin;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -19,9 +24,7 @@ public class PrisonTycoonHook {
     private boolean enabled = false;
 
     public PrisonTycoonHook(CustomMobsPlugin plugin) {
-        this.plugin = plugin;
-        initialize(plugin);
-    }
+        this.plugin = plugin;}
 
     /**
      * Initialise le hook avec PrisonTycoon
@@ -157,18 +160,36 @@ public class PrisonTycoonHook {
     // ===============================
 
     public ItemStack createKey(String keyType) {
-        return isEnabled() ? api.createKey(keyType) : null;
+        if (!isEnabled() || keyType == null || keyType.isEmpty()) return null;
+        return api.createKey(keyType);
+    }
+
+    public ItemStack createCristalVierge(int niveau) {
+        if (!isEnabled() || niveau <= 0) return null;
+        return api.createCristalVierge(niveau);
+    }
+
+    public ItemStack createAutominer(String type) {
+        if (!isEnabled() || type == null) return null;
+        try {
+            AutominerType autominerType = AutominerType.valueOf(type.toUpperCase());
+            return api.createAutominer(autominerType);
+        } catch (IllegalArgumentException e) {
+            plugin.getLogger().warning("Type d'autominer invalide : " + type);
+            return null;
+        }
+    }
+
+    public ItemStack createContainer(int tier) {
+        if (!isEnabled() || tier <= 0) return null;
+        return api.createContainer(tier);
     }
 
     public ItemStack createBoostItem(String type, int durationMinutes, double bonusPercentage) {
-        if (!isEnabled()) return null;
+        if (!isEnabled() || type == null) return null;
         try {
-            // Conversion du type string vers l'enum BoostType si nécessaire
-            return api.createBoostItem(
-                    fr.prisontycoon.boosts.BoostType.valueOf(type.toUpperCase()),
-                    durationMinutes,
-                    bonusPercentage
-            );
+            BoostType boostType = BoostType.valueOf(type.toUpperCase());
+            return api.createBoostItem(boostType, durationMinutes, bonusPercentage);
         } catch (IllegalArgumentException e) {
             plugin.getLogger().warning("Type de boost invalide: " + type);
             return null;
@@ -176,16 +197,19 @@ public class PrisonTycoonHook {
     }
 
     public ItemStack createVoucher(String type, int tier) {
-        if (!isEnabled()) return null;
+        if (!isEnabled() || type == null) return null;
         try {
-            return api.createVoucher(
-                    fr.prisontycoon.vouchers.VoucherType.valueOf(type.toUpperCase()),
-                    tier
-            );
+            VoucherType voucherType = VoucherType.valueOf(type.toUpperCase());
+            return api.createVoucher(voucherType, tier);
         } catch (IllegalArgumentException e) {
             plugin.getLogger().warning("Type de voucher invalide: " + type);
             return null;
         }
+    }
+
+    public ItemStack createUniqueEnchantmentBook(String enchantId) {
+        if (!isEnabled() || enchantId == null) return null;
+        return api.createUniqueEnchantmentBook(enchantId);
     }
 
     // ===============================
@@ -245,35 +269,36 @@ public class PrisonTycoonHook {
      * Effectue une transaction de récompense complète
      */
     public void giveEventReward(Player player, EventReward reward) {
-        if (!isEnabled() || reward == null) return;
+        if (!isEnabled() || player == null || reward == null || !reward.hasAnyReward()) return;
 
-        // Coins
-        if (reward.getCoins() > 0) {
-            addCoins(player, reward.getCoins());
-        }
+        UUID playerUUID = player.getUniqueId();
 
-        // Tokens
-        if (reward.getTokens() > 0) {
-            addTokens(player, reward.getTokens());
-        }
-
-        // Beacons
-        if (reward.getBeacons() > 0) {
-            addBeacons(player, reward.getBeacons());
-        }
+        // Monnaies
+        if (reward.getCoins() > 0) api.addCoins(playerUUID, reward.getCoins());
+        if (reward.getTokens() > 0) api.addTokens(playerUUID, reward.getTokens());
+        if (reward.getBeacons() > 0) api.addBeacons(playerUUID, reward.getBeacons());
+        if (reward.getExperience() > 0) api.addExperience(playerUUID, reward.getExperience());
 
         // Réputation
         if (reward.getReputation() != 0) {
-            modifyReputation(player, reward.getReputation(), reward.getReputationReason());
+            api.modifyReputation(playerUUID, reward.getReputation(), reward.getReputationReason());
+        }
+
+        // Niveaux de Prestige
+        if (reward.getPrestigeLevels() > 0) {
+            int currentLevel = api.getPrestigeLevel(playerUUID);
+            api.setPrestigeLevel(playerUUID, currentLevel + reward.getPrestigeLevels());
         }
 
         // Items
         for (ItemStack item : reward.getItems()) {
             if (item != null) {
+                // Tente d'ajouter à l'inventaire, sinon drop au sol.
                 if (player.getInventory().firstEmpty() != -1) {
                     player.getInventory().addItem(item);
                 } else {
                     player.getWorld().dropItemNaturally(player.getLocation(), item);
+                    player.sendMessage("§cVotre inventaire est plein ! Un item a été déposé à vos pieds.");
                 }
             }
         }
@@ -330,95 +355,95 @@ public class PrisonTycoonHook {
         private long coins = 0;
         private long tokens = 0;
         private long beacons = 0;
+        private long experience = 0;
         private int reputation = 0;
-        private String reputationReason = "Participation événement";
-        private java.util.List<ItemStack> items = new java.util.ArrayList<>();
+        private int prestigeLevels = 0;
+        private String reputationReason = "Récompense d'événement";
+        private final List<ItemStack> items = new ArrayList<>();
 
         public EventReward() {}
 
-        public EventReward coins(long amount) {
-            this.coins = amount;
-            return this;
-        }
+        // --- Méthodes Builder ---
+        public EventReward withCoins(long amount) { this.coins = amount; return this; }
+        public EventReward withTokens(long amount) { this.tokens = amount; return this; }
+        public EventReward withBeacons(long amount) { this.beacons = amount; return this; }
+        public EventReward withExperience(long amount) { this.experience = amount; return this; }
+        public EventReward withPrestigeLevels(int levels) { this.prestigeLevels = levels; return this; }
 
-        public EventReward tokens(long amount) {
-            this.tokens = amount;
-            return this;
-        }
-
-        public EventReward beacons(long amount) {
-            this.beacons = amount;
-            return this;
-        }
-
-        public EventReward reputation(int amount, String reason) {
+        public EventReward withReputation(int amount, String reason) {
             this.reputation = amount;
-            this.reputationReason = reason;
+            if (reason != null && !reason.isEmpty()) this.reputationReason = reason;
             return this;
         }
 
         public EventReward addItem(ItemStack item) {
-            if (item != null) {
-                this.items.add(item.clone());
-            }
+            if (item != null && item.getAmount() > 0) this.items.add(item.clone());
             return this;
         }
 
         public EventReward addItems(ItemStack... items) {
-            for (ItemStack item : items) {
-                addItem(item);
-            }
+            for (ItemStack item : items) addItem(item);
             return this;
         }
 
-        // Getters
+        // --- Getters ---
         public long getCoins() { return coins; }
         public long getTokens() { return tokens; }
         public long getBeacons() { return beacons; }
+        public long getExperience() { return experience; }
         public int getReputation() { return reputation; }
+        public int getPrestigeLevels() { return prestigeLevels; }
         public String getReputationReason() { return reputationReason; }
-        public java.util.List<ItemStack> getItems() { return new java.util.ArrayList<>(items); }
+        public List<ItemStack> getItems() { return new ArrayList<>(items); }
 
         public boolean hasAnyReward() {
-            return coins > 0 || tokens > 0 || beacons > 0 || reputation != 0 || !items.isEmpty();
-        }
-
-        public String getDisplayText() {
-            java.util.List<String> parts = new java.util.ArrayList<>();
-
-            if (coins > 0) parts.add("§6" + coins + " coins");
-            if (tokens > 0) parts.add("§e" + tokens + " tokens");
-            if (beacons > 0) parts.add("§b" + beacons + " beacons");
-            if (reputation > 0) parts.add("§a+" + reputation + " réputation");
-            if (reputation < 0) parts.add("§c" + reputation + " réputation");
-            if (!items.isEmpty()) parts.add("§d" + items.size() + " item(s)");
-
-            return String.join("§7, ", parts);
+            return coins > 0 || tokens > 0 || beacons > 0 || experience > 0 || reputation != 0 || prestigeLevels > 0 || !items.isEmpty();
         }
 
         /**
-         * Applique un multiplicateur à toutes les récompenses
+         * Génère un texte descriptif de toutes les récompenses contenues.
+         */
+        public String getDisplayText() {
+            List<String> parts = new ArrayList<>();
+            if (coins > 0) parts.add("§6" + coins + " Coins");
+            if (tokens > 0) parts.add("§e" + tokens + " Tokens");
+            if (beacons > 0) parts.add("§b" + beacons + " Beacons");
+            if (experience > 0) parts.add("§2" + experience + " Expérience");
+            if (reputation > 0) parts.add("§a+" + reputation + " Réputation");
+            if (reputation < 0) parts.add("§c" + reputation + " Réputation");
+            if (prestigeLevels > 0) parts.add("§d+" + prestigeLevels + " Niveau(x) de Prestige");
+            if (!items.isEmpty()) {
+                long totalItems = items.stream().mapToLong(ItemStack::getAmount).sum();
+                parts.add("§f" + totalItems + " Item(s)");
+            }
+            return parts.isEmpty() ? "Rien de spécial." : String.join("§7, ", parts);
+        }
+
+        /**
+         * Applique un multiplicateur aux récompenses numériques (coins, tokens, beacons, xp).
+         * Ne multiplie PAS la réputation, les items, les permissions ou les prestiges.
          */
         public EventReward multiply(double multiplier) {
+            if (multiplier <= 0) return this;
             this.coins = (long) (this.coins * multiplier);
             this.tokens = (long) (this.tokens * multiplier);
             this.beacons = (long) (this.beacons * multiplier);
-            // Note: On ne multiplie pas la réputation ni les items
+            this.experience = (long) (this.experience * multiplier);
             return this;
         }
 
         /**
-         * Fusionne cette récompense avec une autre
+         * Fusionne une autre récompense dans celle-ci, en additionnant les valeurs.
          */
         public EventReward merge(EventReward other) {
             if (other == null) return this;
-
             this.coins += other.coins;
             this.tokens += other.tokens;
             this.beacons += other.beacons;
+            this.experience += other.experience;
             this.reputation += other.reputation;
+            this.prestigeLevels += other.prestigeLevels;
             this.items.addAll(other.items);
-
             return this;
         }
     }

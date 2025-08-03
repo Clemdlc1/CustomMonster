@@ -2,6 +2,7 @@ package fr.custommobs.events.types;
 
 import fr.custommobs.CustomMobsPlugin;
 import fr.custommobs.api.PrisonTycoonHook;
+import fr.custommobs.events.EventListener;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Particle;
@@ -28,7 +29,7 @@ public class TreasureHuntEvent extends ServerEvent {
     private boolean lutinCaptured = false;
     private UUID capturedBy = null;
 
-    public TreasureHuntEvent(CustomMobsPlugin plugin, PrisonTycoonHook prisonHook, EventRewardsManager rewardsManager) {
+    public TreasureHuntEvent(CustomMobsPlugin plugin, PrisonTycoonHook prisonHook, EventListener.EventRewardsManager rewardsManager) {
         super(plugin, prisonHook, rewardsManager, "treasure_hunt", "Course au Butin",
                 EventType.COMPETITIVE, 15 * 60);
     }

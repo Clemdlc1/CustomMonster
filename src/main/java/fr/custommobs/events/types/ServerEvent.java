@@ -2,31 +2,22 @@ package fr.custommobs.events.types;
 
 import fr.custommobs.CustomMobsPlugin;
 import fr.custommobs.api.PrisonTycoonHook;
-import fr.custommobs.mobs.CustomMob;
-import org.bukkit.*;
-import org.bukkit.block.Block;
-import org.bukkit.block.Chest;
-import org.bukkit.entity.LivingEntity;
+import fr.custommobs.events.EventListener;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.Inventory;
-import org.bukkit.inventory.ItemStack;
-import org.bukkit.metadata.FixedMetadataValue;
-import org.bukkit.potion.PotionEffect;
-import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ThreadLocalRandom;
+
 /**
  * Classe de base pour tous les événements serveur
  */
 public abstract class ServerEvent {
     protected final CustomMobsPlugin plugin;
     protected final PrisonTycoonHook prisonHook;
-    protected final EventRewardsManager rewardsManager;
+    protected final EventListener.EventRewardsManager rewardsManager;
 
     protected final String id;
     protected final String name;
@@ -44,7 +35,7 @@ public abstract class ServerEvent {
     protected final List<BukkitTask> tasks = new ArrayList<>();
 
     public ServerEvent(CustomMobsPlugin plugin, PrisonTycoonHook prisonHook,
-                       EventRewardsManager rewardsManager, String id, String name,
+                       EventListener.EventRewardsManager rewardsManager, String id, String name,
                        EventType type, int durationSeconds) {
         this.plugin = plugin;
         this.prisonHook = prisonHook;

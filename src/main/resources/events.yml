@@ -1,0 +1,270 @@
+# Configuration des événements du serveur
+# Ce fichier définit tous les événements, leurs plannings et leurs localisations
+
+# Plannings des événements
+event-schedules:
+  # 11.5 Contenir la Brèche - Bi-hebdomadaire
+  breach_containment:
+    name: "Contenir la Brèche"
+    enabled: true
+    days: [ "WEDNESDAY", "SUNDAY" ]
+    time: "15:00"
+    duration: 1200  # 20 minutes en secondes
+    description: "Des entités dangereuses s'échappent de brèches dimensionnelles"
+
+  # 11.6 Course au Butin - Hebdomadaire
+  treasure_hunt:
+    name: "Course au Butin"
+    enabled: true
+    days: [ "FRIDAY" ]
+    time: "18:00"
+    duration: 900   # 15 minutes
+    description: "Attrapez le lutin trésorier avant qu'il ne s'échappe"
+
+  # Boss quotidien - Tous les jours
+  daily_boss:
+    name: "Boss Quotidien"
+    enabled: true
+    days: [ "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY" ]
+    time: "20:00"
+    duration: 1800  # 30 minutes max
+    description: "Un boss puissant apparaît pour défier les joueurs"
+
+  # Chasse au Trésor - 2 fois par semaine
+  treasure_search:
+    name: "Chasse au Trésor"
+    enabled: true
+    days: [ "TUESDAY", "SATURDAY" ]
+    time: "16:00"
+    duration: 1800  # 30 minutes
+    description: "Trouvez les coffres cachés dans le monde"
+
+  # Guerre des Gangs - Weekend
+  gang_war:
+    name: "Guerre des Gangs"
+    enabled: true
+    days: [ "SATURDAY" ]
+    time: "19:00"
+    duration: 7200  # 2 heures
+    description: "Les gangs s'affrontent pour la domination"
+
+# Localisations pour les événements
+event-locations:
+  # Localisations pour les brèches
+  breach-areas:
+    # Zone 1 - Plaines dangereuses
+    MineZ:
+      world: "MineZ"
+      center:
+        x: 186
+        y: 138
+        z: 82
+      radius: 5
+      min-y: 138
+      max-y: 150
+      weight: 100  # Chance relative d'être choisie
+
+  # Localisations pour les boss quotidiens
+  boss-arenas:
+    # Arène principale
+    main_arena:
+      world: "Cave"
+      center:
+        x: -20
+        y: 12
+        z: 10
+      radius: 0
+      min-y: 12
+      max-y: 12
+      weight: 4
+      display-name: "Arène Principale"
+
+  # Zones pour la chasse au trésor
+  treasure-zones:
+    # Zone village
+    village_area:
+      world: "world"
+      center:
+        x: 0
+        y: 70
+        z: 0
+      radius: 100
+      min-y: 60
+      max-y: 90
+      weight: 3
+      max-chests: 8
+
+    # Zone forêt
+    forest_area:
+      world: "world"
+      center:
+        x: -200
+        y: 75
+        z: 200
+      radius: 80
+      min-y: 65
+      max-y: 95
+      weight: 2
+      max-chests: 6
+
+    # Zone mine
+    mining_area:
+      world: "world"
+      center:
+        x: 300
+        y: 50
+        z: -100
+      radius: 60
+      min-y: 30
+      max-y: 70
+      weight: 2
+      max-chests: 5
+
+  # Zones pour les largages d'urgence
+  supply-drop-zones:
+    # Mine PvP principale
+    main_pvp_mine:
+      world: "world_the_end"
+      center:
+        x: 0
+        y: 60
+        z: 0
+      radius: 150
+      min-y: 50
+      max-y: 80
+      weight: 5
+      max-drops: 12
+
+    # Zone de combat
+    combat_zone:
+      world: "world"
+      center:
+        x: 800
+        y: 70
+        z: 800
+      radius: 100
+      min-y: 65
+      max-y: 85
+      weight: 3
+      max-drops: 8
+
+  # Points spécifiques pour certains événements
+  specific-locations:
+    # Point de spawn pour le lutin trésorier
+    treasure_lutin_spawns:
+      - world: "world"
+        x: 50
+        y: 75
+        z: 50
+        weight: 3
+      - world: "world"
+        x: -150
+        y: 80
+        z: 100
+        weight: 2
+      - world: "world"
+        x: 250
+        y: 90
+        z: -50
+        weight: 2
+      - world: "world"
+        x: -75
+        y: 65
+        z: -200
+        weight: 1
+
+# Configuration des mobs pour les événements
+event-mobs:
+  # Boss quotidiens disponibles
+  daily-bosses:
+    warden_boss:
+      name: "§0§lGardien des Abysses"
+      weight: 3
+      max-health: 1024
+      abilities: [ "sonic_boom", "darkness", "summon_wardens" ]
+
+    wither_boss:
+      name: "§5§lArchliche Nécrosis"
+      weight: 2
+      max-health: 1024
+      abilities: [ "wither_skulls", "explosion", "summon_skeletons" ]
+
+    ravager_boss:
+      name: "§c§lDévastateur Primordial"
+      weight: 2
+      max-health: 1024
+      abilities: [ "charge", "roar", "ground_pound" ]
+
+  # Monstres de brèche
+  breach-mobs:
+    enderman_shadow:
+      name: "§8Enderman des Ombres"
+      spawn-weight: 4
+      group-size: 2
+
+    zombie_warrior:
+      name: "§bZombieWarrior"
+      spawn-weight: 6
+      group-size: 4
+
+    skeleton_archer:
+      name: "§5quelltete"
+      spawn-weight: 3
+      group-size: 1
+
+    geode_aberration:
+      name: "§dShulker Dimensionnel"
+      spawn-weight: 2
+      group-size: 1
+
+# Configuration des récompenses par événement
+event-rewards:
+  breach_containment:
+    participation: 5000      # Argent pour participation
+    bonus-per-kill: 500     # Bonus par monstre tué
+    top-killer: 15000       # Bonus pour le meilleur tueur
+
+  daily_boss:
+    participation: 10000
+    damage-tiers:
+      bronze: 20000         # >500 dégâts
+      silver: 35000         # >1000 dégâts
+      gold: 50000          # >2000 dégâts
+    killer-bonus: 100000    # Bonus pour celui qui tue le boss
+
+  treasure_hunt:
+    lutin-caught: 25000
+    participation: 3000
+
+  treasure_search:
+    per-treasure: 8000
+    completion-bonus: 20000  # Si tous les coffres trouvés
+
+  gang_war:
+    participation: 15000
+    win-bonus: 40000
+    mvp-bonus: 25000
+
+# Configuration avancée
+advanced-settings:
+  # Système de cooldown personnel
+  personal-cooldowns:
+    enabled: true
+    daily_boss: 0          # Pas de cooldown
+    treasure_hunt: 3600    # 1 heure
+    breach_containment: 1800  # 30 minutes
+
+  # Système de notifications
+  notifications:
+    announce-start: true
+    announce-15min: true
+    announce-5min: true
+    announce-1min: true
+
+  # Intégration avec les statistiques boss
+  boss-integration:
+    track-damage: true
+    track-deaths: true
+    track-kills: true
+    display-leaderboard: true
+    save-detailed-stats: true

@@ -22,9 +22,6 @@ public class WardenBoss extends CustomMob {
     private final Map<Player, Long> lastPlayerAction = new HashMap<>();
     private final Map<Player, Double> playerThreat = new HashMap<>();
 
-    // === GESTION DES BLOCS SCULK TEMPORAIRES ===
-    private final Map<Location, Material> originalBlocks = new ConcurrentHashMap<>();
-    private final Set<Location> sculkInfectedBlocks = ConcurrentHashMap.newKeySet();
 
     // --- ÉTAT DU BOSS MULTIJOUEUR ---
     private BossPhase currentPhase = BossPhase.DORMANT;
@@ -78,9 +75,6 @@ public class WardenBoss extends CustomMob {
 
         setupEntity(warden);
         startDormantPhase();
-        createSculkArena();
-        startSculkCleanupTask();
-
         return warden;
     }
 
@@ -178,8 +172,6 @@ public class WardenBoss extends CustomMob {
             seismicJumpMultiTarget(players);
         } else if (currentTime - lastSonicBoom > sonicCD && distance < 30) {
             sonicBoomChain(players);
-        } else if (currentTime - lastSculkSpread > 12000) {
-            sculkInfestationAggressive(players);
         } else if (distance <= 10) {
             attack(target);
         }
@@ -307,14 +299,8 @@ public class WardenBoss extends CustomMob {
 
         if (!secondaryTargets.isEmpty()) {
             Player secondary = secondaryTargets.get(random.nextInt(secondaryTargets.size()));
+            createDarknessTrap(secondary.getLocation());
 
-            if (Math.random() < 0.5) {
-                // Tentacule sculk
-                createSculkTentacle(secondary.getLocation());
-            } else {
-                // Piège de ténèbres
-                createDarknessTrap(secondary.getLocation());
-            }
         }
     }
 
@@ -571,7 +557,6 @@ public class WardenBoss extends CustomMob {
                         currentTarget.getWorld().playSound(currentTarget.getLocation(), Sound.ENTITY_WARDEN_HEARTBEAT, 1.5f, 0.6f);
 
                         // Crée des capteurs sculk temporaires
-                        createTrackingSculkSensors(currentTarget.getLocation());
                     }
                     targetIndex++;
                 }
@@ -750,49 +735,6 @@ public class WardenBoss extends CustomMob {
         return center.multiply(1.0 / totalWeight);
     }
 
-    private void createSculkTentacle(Location location) {
-        // Tentacule sculk qui émerge du sol
-        new BukkitRunnable() {
-            int height = 0;
-            @Override
-            public void run() {
-                if (height >= 5) {
-                    // Tentacule retombe après 3 secondes
-                    new BukkitRunnable() {
-                        @Override
-                        public void run() {
-                            for (int y = 0; y < 5; y++) {
-                                Block block = location.clone().add(0, y, 0).getBlock();
-                                if (block.getType() == Material.SCULK_VEIN) {
-                                    block.setType(Material.AIR);
-                                }
-                            }
-                        }
-                    }.runTaskLater(plugin, 60L);
-                    cancel();
-                    return;
-                }
-
-                Block block = location.clone().add(0, height, 0).getBlock();
-                if (block.getType().isAir()) {
-                    Material originalType = block.getType();
-                    block.setType(Material.SCULK_VEIN);
-                    registerSculkBlock(block.getLocation(), originalType, 100L);
-                }
-
-                // Dégâts aux joueurs touchés
-                for (Player p : getNearbyPlayersAt(location.clone().add(0, height, 0), 2)) {
-                    p.damage(damage * 0.4, entity);
-                    p.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 60, 2));
-                    increaseAnger(p, 3);
-                }
-
-                location.getWorld().spawnParticle(Particle.SCULK_CHARGE, location.clone().add(0, height, 0), 5, 0.5, 0.5, 0.5, 0.1);
-                height++;
-            }
-        }.runTaskTimer(plugin, 0L, 3L);
-    }
-
     private void createDarknessTrap(Location location) {
         // Piège de ténèbres persistant
         location.getWorld().playSound(location, Sound.ENTITY_WARDEN_LISTENING, 1.0f, 0.6f);
@@ -834,19 +776,6 @@ public class WardenBoss extends CustomMob {
                 duration--;
             }
         }.runTaskTimer(plugin, 0L, 1L);
-    }
-
-    private void createTrackingSculkSensors(Location center) {
-        for (int i = 0; i < 4; i++) {
-            double angle = i * 90;
-            Location sensorLoc = center.clone().add(
-                    Math.cos(Math.toRadians(angle)) * 5,
-                    0,
-                    Math.sin(Math.toRadians(angle)) * 5
-            );
-
-            summonSculkSensor(sensorLoc);
-        }
     }
 
     private void createAbyssalShockwave(Location center, double radius) {
@@ -956,7 +885,6 @@ public class WardenBoss extends CustomMob {
                 Block block = epicenter.clone().add(x, -depth, z).getBlock();
                 if (block.getType().isAir()) {
                     block.setType(Material.SCULK);
-                    registerSculkBlock(block.getLocation(), Material.AIR, 2400L);
                 }
             }
         }
@@ -1046,125 +974,6 @@ public class WardenBoss extends CustomMob {
                 increaseAnger(p, 15);
             }
         }
-    }
-
-    // === MÉTHODES DE GESTION SCULK (inchangées du code original) ===
-
-    private void startSculkCleanupTask() {
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (entity == null || entity.isDead()) {
-                    cleanupAllSculkBlocks(true);
-                    cancel();
-                    return;
-                }
-                cleanupOldSculkBlocks();
-            }
-        }.runTaskTimer(plugin, 600L, 600L);
-    }
-
-    private void registerSculkBlock(Location location, Material originalType, long durationTicks) {
-        originalBlocks.put(location, originalType);
-        sculkInfectedBlocks.add(location);
-
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                restoreSculkBlock(location, true);
-            }
-        }.runTaskLater(plugin, durationTicks);
-    }
-
-    private boolean restoreSculkBlock(Location location, boolean withEffects) {
-        Material originalType = originalBlocks.get(location);
-        if (originalType == null) return false;
-
-        Block block = location.getBlock();
-        if (block.getType() == Material.SCULK ||
-                block.getType() == Material.SCULK_VEIN ||
-                block.getType() == Material.SCULK_SENSOR ||
-                block.getType() == Material.SCULK_CATALYST) {
-
-            block.setType(originalType);
-
-            if (withEffects && Math.random() < 0.1) {
-                location.getWorld().spawnParticle(Particle.HAPPY_VILLAGER,
-                        location.clone().add(0.5, 0.5, 0.5), 2, 0.2, 0.2, 0.2, 0);
-            }
-        }
-
-        originalBlocks.remove(location);
-        sculkInfectedBlocks.remove(location);
-        return true;
-    }
-
-    private void cleanupOldSculkBlocks() {
-        int cleaned = 0;
-        Iterator<Location> iterator = sculkInfectedBlocks.iterator();
-
-        while (iterator.hasNext()) {
-            Location location = iterator.next();
-
-            if (Math.random() < 0.1) {
-                if (restoreSculkBlock(location, false)) {
-                    cleaned++;
-                }
-                iterator.remove();
-            }
-        }
-
-        if (cleaned > 0) {
-            plugin.getLogger().fine("Nettoyage sculk périodique: " + cleaned + " blocs restaurés");
-        }
-    }
-
-    private void cleanupAllSculkBlocks(boolean withEffects) {
-        plugin.getLogger().info("Nettoyage complet des blocs sculk du Warden...");
-
-        new BukkitRunnable() {
-            int wave = 0;
-            final int maxWaves = 8;
-
-            @Override
-            public void run() {
-                if (wave >= maxWaves || sculkInfectedBlocks.isEmpty()) {
-                    plugin.getLogger().info("Nettoyage sculk terminé après " + wave + " vagues");
-                    cancel();
-                    return;
-                }
-
-                Location center = burrowLocation != null ? burrowLocation : entity.getLocation();
-                int radius = 5 + (wave * 6);
-                int cleaned = cleanupSculkInRadius(center, radius, withEffects);
-
-                if (cleaned > 0) {
-                    plugin.getLogger().fine("Vague " + (wave + 1) + ": " + cleaned + " blocs restaurés (rayon " + radius + ")");
-                }
-
-                wave++;
-            }
-        }.runTaskTimer(plugin, 20L, 40L);
-    }
-
-    private int cleanupSculkInRadius(Location center, int radius, boolean withEffects) {
-        int cleaned = 0;
-        Iterator<Location> iterator = sculkInfectedBlocks.iterator();
-
-        while (iterator.hasNext()) {
-            Location location = iterator.next();
-
-            if (location.getWorld().equals(center.getWorld()) &&
-                    location.distance(center) <= radius) {
-
-                if (restoreSculkBlock(location, withEffects)) {
-                    cleaned++;
-                }
-                iterator.remove();
-            }
-        }
-
-        return cleaned;
     }
 
     // === MÉTHODES EXISTANTES CONSERVÉES ===
@@ -1278,38 +1087,6 @@ public class WardenBoss extends CustomMob {
         }
     }
 
-    private void createSculkArena() {
-        Location center = entity.getLocation();
-
-        new BukkitRunnable() {
-            int radius = 0;
-            @Override
-            public void run() {
-                if (radius > 18) { // Arena plus grande pour le multijoueur
-                    cancel();
-                    return;
-                }
-
-                for (int x = -radius; x <= radius; x++) {
-                    for (int z = -radius; z <= radius; z++) {
-                        if (x*x + z*z <= radius*radius && random.nextDouble() < 0.25) {
-                            Location blockLoc = center.clone().add(x, -1, z);
-                            Block block = blockLoc.getBlock();
-
-                            if (block.getType().isSolid() && !block.getType().name().contains("BEDROCK")) {
-                                Material originalType = block.getType();
-                                block.setType(Material.SCULK);
-                                registerSculkBlock(blockLoc, originalType, 3000L);
-                            }
-                        }
-                    }
-                }
-
-                radius++;
-            }
-        }.runTaskTimer(plugin, 20L, 5L);
-    }
-
     private void sonicBoom(Player target, double powerMultiplier) {
         lastSonicBoom = System.currentTimeMillis();
         entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_WARDEN_SONIC_CHARGE, 2.0f, 0.8f);
@@ -1365,52 +1142,6 @@ public class WardenBoss extends CustomMob {
         }
     }
 
-    private void summonSculkSensor(Location location) {
-        ArmorStand sensor = location.getWorld().spawn(location, ArmorStand.class);
-        sensor.setVisible(false);
-        sensor.setGravity(false);
-        sensor.setCustomName("§8Capteur Sculk");
-        sensor.setCustomNameVisible(false);
-
-        sculkMinions.add(sensor);
-
-        Block block = location.getBlock();
-        if (block.getType().isAir() || !block.getType().isSolid()) {
-            Material originalType = block.getType();
-            block.setType(Material.SCULK_SENSOR);
-            registerSculkBlock(location, originalType, 600L);
-        }
-
-        new BukkitRunnable() {
-            int lifetime = 600;
-            @Override
-            public void run() {
-                if (lifetime <= 0 || sensor.isDead()) {
-                    sculkMinions.remove(sensor);
-                    if (!sensor.isDead()) sensor.remove();
-                    cancel();
-                    return;
-                }
-
-                for (Player p : getNearbyPlayersAt(location, 10)) {
-                    if (p.getVelocity().lengthSquared() > 0.01) {
-                        increaseAnger(p, 3);
-
-                        location.getWorld().playSound(location, Sound.BLOCK_SCULK_SENSOR_CLICKING, 1.0f, 1.5f);
-                        location.getWorld().spawnParticle(Particle.SCULK_CHARGE, location, 12, 5, 1, 5, 0.1);
-
-                        if (entity.getLocation().distance(location) < 25) {
-                            sonicBoom(p, 0.8);
-                        }
-                        break;
-                    }
-                }
-
-                lifetime--;
-            }
-        }.runTaskTimer(plugin, 0L, 1L);
-    }
-
     private void cleanupMinions() {
         sculkMinions.removeIf(LivingEntity::isDead);
     }
@@ -1428,8 +1159,6 @@ public class WardenBoss extends CustomMob {
                     return;
                 }
 
-                spreadSculkWave(entity.getLocation(), 10 + wave * 5);
-
                 if (wave == 1 && sculkMinions.size() < players.size() + 1) {
                     summonSculkMinions();
                 }
@@ -1437,100 +1166,6 @@ public class WardenBoss extends CustomMob {
                 wave++;
             }
         }.runTaskTimer(plugin, 0L, 40L);
-    }
-
-    private void sculkInfestationAggressive(List<Player> players) {
-        lastSculkSpread = System.currentTimeMillis();
-        Bukkit.broadcastMessage("§8§l[BOSS] §0Le Gardien corrompt agressivement l'environnement !");
-        entity.getWorld().playSound(entity.getLocation(), Sound.BLOCK_SCULK_SPREAD, 3.0f, 0.5f);
-
-        for (Player player : players) {
-            if (player.isDead()) continue;
-            createSculkTrap(player.getLocation());
-            createTrackingSculkSensors(player.getLocation());
-        }
-    }
-
-    private void spreadSculkWave(Location center, int radius) {
-        new BukkitRunnable() {
-            int currentRadius = 0;
-            @Override
-            public void run() {
-                if (currentRadius > radius) {
-                    cancel();
-                    return;
-                }
-
-                for (int i = 0; i < 360; i += 20) {
-                    double angle = Math.toRadians(i);
-                    Location blockLoc = center.clone().add(
-                            Math.cos(angle) * currentRadius,
-                            -1,
-                            Math.sin(angle) * currentRadius
-                    );
-
-                    Block block = blockLoc.getBlock();
-                    if (block.getType().isSolid() && !block.getType().name().contains("BEDROCK") && random.nextDouble() < 0.4) {
-                        Material originalType = block.getType();
-                        block.setType(Material.SCULK);
-                        registerSculkBlock(blockLoc, originalType, 1800L);
-
-                        if (random.nextDouble() < 0.2) {
-                            Block above = block.getRelative(0, 1, 0);
-                            if (above.getType().isAir()) {
-                                above.setType(Material.SCULK_VEIN);
-                                registerSculkBlock(above.getLocation(), Material.AIR, 1200L);
-                            }
-                        }
-                    }
-                }
-
-                center.getWorld().playSound(center, Sound.BLOCK_SCULK_SPREAD, 1.0f, 0.8f + (currentRadius * 0.1f));
-                currentRadius++;
-            }
-        }.runTaskTimer(plugin, 0L, 3L);
-    }
-
-    private void createSculkTrap(Location location) {
-        for (int x = -3; x <= 3; x++) {
-            for (int z = -3; z <= 3; z++) {
-                Location trapLoc = location.clone().add(x, -1, z);
-                Block block = trapLoc.getBlock();
-
-                if (block.getType().isSolid()) {
-                    Material originalType = block.getType();
-                    block.setType(Material.SCULK);
-                    registerSculkBlock(trapLoc, originalType, 800L);
-                }
-            }
-        }
-
-        new BukkitRunnable() {
-            int lifetime = 800;
-            @Override
-            public void run() {
-                if (lifetime <= 0) {
-                    cancel();
-                    return;
-                }
-
-                for (Player p : getNearbyPlayersAt(location, 4)) {
-                    p.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 60, 3));
-                    p.addPotionEffect(new PotionEffect(PotionEffectType.MINING_FATIGUE, 60, 2));
-
-                    if (lifetime % 25 == 0) {
-                        p.damage(2.5, entity);
-                        increaseAnger(p, 2);
-                    }
-                }
-
-                if (lifetime % 15 == 0) {
-                    location.getWorld().spawnParticle(Particle.SCULK_SOUL, location, 8, 3, 1, 3, 0.1);
-                }
-
-                lifetime--;
-            }
-        }.runTaskTimer(plugin, 0L, 1L);
     }
 
     private void summonSculkMinions() {
