@@ -99,6 +99,12 @@ public class EventListener implements Listener {
             }
         }
 
+        // NOUVEAU: Guerre des Gangs - Mort d'un monstre
+        ServerEvent gangWarEvent = scheduler.getActiveEvent("gang_war");
+        if (gangWarEvent instanceof GangWarEvent) {
+            ((GangWarEvent) gangWarEvent).onMonsterKilled(entity, killer);
+        }
+
         // Mise à jour du compteur global de monstres pour les défis communautaires
         if (CustomMob.isCustomMob(entity)) {
             // Ajouter à un compteur global si nécessaire
@@ -111,11 +117,20 @@ public class EventListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerDeath(PlayerDeathEvent event) {
         Player player = event.getEntity();
+        Player killer = player.getKiller();
+
 
         // Brèche - Marquer le joueur comme non-survivant
         ServerEvent breachEvent = scheduler.getActiveEvent("breach_containment");
         if (breachEvent instanceof BreachContainmentEvent) {
             ((BreachContainmentEvent) breachEvent).onPlayerDeath(player);
+        }
+
+        if (killer != null && killer != player) {
+            ServerEvent gangWarEvent = scheduler.getActiveEvent("gang_war");
+            if (gangWarEvent instanceof GangWarEvent) {
+                ((GangWarEvent) gangWarEvent).onPlayerKilled(killer, player);
+            }
         }
 
         // Autres événements peuvent également gérer la mort des joueurs

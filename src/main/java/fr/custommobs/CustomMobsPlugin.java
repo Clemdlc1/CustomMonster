@@ -2,6 +2,7 @@ package fr.custommobs;
 
 import fr.custommobs.api.PrisonTycoonHook;
 import fr.custommobs.commands.EventAdminCommand;
+import fr.custommobs.commands.EventCommand;
 import fr.custommobs.commands.LootConfigCommand;
 import fr.custommobs.commands.SpawnMobCommand;
 import fr.custommobs.events.EventConfigManager;
@@ -108,6 +109,8 @@ public final class CustomMobsPlugin extends JavaPlugin {
         getCommand("lootconfig").setExecutor(new LootConfigCommand(this));
         getCommand("spawnmob").setExecutor(new SpawnMobCommand(this));
         getCommand("eventadmin").setExecutor(new EventAdminCommand(this));
+        getCommand("event").setExecutor(new EventCommand(this));
+
     }
 
     private void registerListeners() {

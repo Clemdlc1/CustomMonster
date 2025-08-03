@@ -20,7 +20,10 @@ commands:
     description: admin
     usage: /eventadmin <mob> [x] [y] [z]
     permission: specialmine.admin
-
+  event:
+    description: Commandes joueur pour consulter les événements
+    usage: /event [gangwar|list|help]
+    aliases: [events, evenement]
 permissions:
   custommobs.admin:
     description: Administration du plugin

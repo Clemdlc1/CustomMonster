@@ -43,10 +43,10 @@ event-schedules:
   gang_war:
     name: "Guerre des Gangs"
     enabled: true
-    days: [ "SATURDAY" ]
-    time: "19:00"
-    duration: 7200  # 2 heures
-    description: "Les gangs s'affrontent pour la domination"
+    days: [ "FRIDAY" ]  # Démarre le vendredi
+    time: "20:00"       # 20h le vendredi soir
+    duration: 165600    # 46 heures (vendredi 20h -> dimanche 18h)
+    description: "Weekend de guerre totale entre les gangs pour la domination"
 
 # Localisations pour les événements
 event-locations:
