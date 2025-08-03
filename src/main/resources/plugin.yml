@@ -4,7 +4,7 @@ main: fr.custommobs.CustomMobsPlugin
 api-version: 1.21
 author: YourName
 description: Plugin pour ajouter des monstres custom optimisés
-depend: []
+depend: [PrisonTycoon]
 softdepend: []
 
 commands:

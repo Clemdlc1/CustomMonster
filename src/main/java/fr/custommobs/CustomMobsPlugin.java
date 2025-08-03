@@ -1,7 +1,9 @@
 package fr.custommobs;
 
+import fr.custommobs.api.PrisonTycoonHook;
 import fr.custommobs.commands.LootConfigCommand;
 import fr.custommobs.commands.SpawnMobCommand;
+import fr.custommobs.events.EventScheduler;
 import fr.custommobs.listeners.BossStatsListener;
 import fr.custommobs.listeners.MobControlListener;
 import fr.custommobs.listeners.MobSpawnListener;
@@ -20,6 +22,8 @@ public final class CustomMobsPlugin extends JavaPlugin {
     private SpawnManager spawnManager;
     private BossBarManager bossBarManager;
     private BossStatsManager bossStatsManager;
+    private PrisonTycoonHook prisonTycoonHook;
+    private EventScheduler eventScheduler;
 
     @Override
     public void onEnable() {
@@ -39,6 +43,10 @@ public final class CustomMobsPlugin extends JavaPlugin {
 
         // Enregistre les listeners
         registerListeners();
+
+        this.prisonTycoonHook = new PrisonTycoonHook(this);
+
+        this.eventScheduler = new EventScheduler(this);
 
         getLogger().info("CustomMobs plugin activé avec succès!");
         getLogger().info("Nombre de monstres enregistrés: " + mobManager.getRegisteredMobIds().size());
@@ -127,4 +135,9 @@ public final class CustomMobsPlugin extends JavaPlugin {
     public BossStatsManager getBossStatsManager() {
         return bossStatsManager;
     }
+
+    public PrisonTycoonHook getPrisonTycoonHook() {
+        return prisonTycoonHook;
+    }
+
 }

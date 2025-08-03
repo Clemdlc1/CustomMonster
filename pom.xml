@@ -96,5 +96,12 @@
             <version>24.1.0</version>
             <scope>provided</scope>
         </dependency>
+
+        <dependency>
+            <groupId>fr.prisontycoon</groupId> <!-- Doit correspondre au groupId de PrisonTycoon -->
+            <artifactId>PrisonTycoon</artifactId> <!-- Doit correspondre à l'artifactId de PrisonTycoon -->
+            <version>0.1</version> <!-- La version de votre PrisonTycoon -->
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 </project>
