@@ -4,6 +4,7 @@ import fr.prisontycoon.api.PrisonTycoonAPI;
 import fr.custommobs.CustomMobsPlugin;
 import fr.prisontycoon.autominers.AutominerType;
 import fr.prisontycoon.boosts.BoostType;
+import fr.prisontycoon.reputation.ReputationTier;
 import fr.prisontycoon.vouchers.VoucherType;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -144,15 +145,16 @@ public class PrisonTycoonHook {
         }
     }
 
-    public ReputationLevel getReputationLevel(Player player) {
-        if (!isEnabled()) return ReputationLevel.NEUTRAL;
-
+    public ReputationTier getReputationLevel(Player player) {
+        if (!isEnabled()) return ReputationTier.ORDINAIRE;
         int reputation = getReputation(player);
-        if (reputation >= 1000) return ReputationLevel.VERY_POSITIVE;
-        if (reputation >= 500) return ReputationLevel.POSITIVE;
-        if (reputation <= -1000) return ReputationLevel.VERY_NEGATIVE;
-        if (reputation <= -500) return ReputationLevel.NEGATIVE;
-        return ReputationLevel.NEUTRAL;
+        if (reputation >= 667) return ReputationTier.EXEMPLAIRE;
+        if (reputation >= 334) return ReputationTier.HONORABLE;
+        if (reputation >= 1) return ReputationTier.RESPECTE;
+        if (reputation <= -667) return ReputationTier.INFAME;
+        if (reputation <= -334) return ReputationTier.CRIMINEL;
+        if (reputation <= -1) return ReputationTier.SUSPECT;
+        return ReputationTier.ORDINAIRE;
     }
 
     // ===============================
