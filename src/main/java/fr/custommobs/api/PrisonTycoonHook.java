@@ -30,12 +30,11 @@ public class PrisonTycoonHook {
     /**
      * Initialise le hook avec PrisonTycoon
      */
-    public static PrisonTycoonHook initialize(CustomMobsPlugin plugin) {
+    public static void initialize(CustomMobsPlugin plugin) {
         if (instance == null) {
             instance = new PrisonTycoonHook(plugin);
             instance.setupHook();
         }
-        return instance;
     }
 
     /**

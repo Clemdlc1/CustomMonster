@@ -3,14 +3,14 @@
 
 # Plannings des événements
 event-schedules:
-  # 11.5 Contenir la Brèche - Bi-hebdomadaire
+  # 11.5 Contenir la Brèche - Bi-hebdomadaire (Mercredi et Dimanche à 15h)
   breach_containment:
     name: "Contenir la Brèche"
     enabled: true
     days: [ "WEDNESDAY", "SUNDAY" ]
     time: "15:00"
     duration: 1200  # 20 minutes en secondes
-    description: "Des entités dangereuses s'échappent de brèches dimensionnelles"
+    description: "Rupture dimensionnelle - 5 vagues de créatures à affronter coopérativement"
 
   # 11.6 Course au Butin - Hebdomadaire
   treasure_hunt:
@@ -50,103 +50,59 @@ event-schedules:
 
 # Localisations pour les événements
 event-locations:
-  # Localisations pour les brèches
+  # Zones de brèche dimensionnelle - Configurables selon vos mines
   breach-areas:
-    # Zone 1 - Plaines dangereuses
-    MineZ:
+    # Mine Z - Zone principale
+    mine_z:
       world: "MineZ"
       center:
         x: 186
         y: 138
         z: 82
-      radius: 5
+      radius: 8
       min-y: 138
       max-y: 150
-      weight: 100  # Chance relative d'être choisie
+      weight: 100
+      display-name: "Mine Z"
 
-  # Localisations pour les boss quotidiens
-  boss-arenas:
-    # Arène principale
-    main_arena:
+    # Mine A - Zone alternative
+    mine_a:
+      world: "MineA"
+      center:
+        x: 150
+        y: 120
+        z: 200
+      radius: 10
+      min-y: 120
+      max-y: 140
+      weight: 80
+      display-name: "Mine A"
+
+    # Mine B - Zone alternative
+    mine_b:
+      world: "MineB"
+      center:
+        x: -100
+        y: 110
+        z: 150
+      radius: 8
+      min-y: 110
+      max-y: 130
+      weight: 80
+      display-name: "Mine B"
+
+    # Cave - Zone spéciale
+    cave_depths:
       world: "Cave"
       center:
         x: -20
         y: 12
         z: 10
-      radius: 0
-      min-y: 12
-      max-y: 12
-      weight: 4
-      display-name: "Arène Principale"
-
-  # Zones pour la chasse au trésor
-  treasure-zones:
-    # Zone village
-    village_area:
-      world: "world"
-      center:
-        x: 0
-        y: 70
-        z: 0
-      radius: 100
-      min-y: 60
-      max-y: 90
-      weight: 3
-      max-chests: 8
-
-    # Zone forêt
-    forest_area:
-      world: "world"
-      center:
-        x: -200
-        y: 75
-        z: 200
-      radius: 80
-      min-y: 65
-      max-y: 95
-      weight: 2
-      max-chests: 6
-
-    # Zone mine
-    mining_area:
-      world: "world"
-      center:
-        x: 300
-        y: 50
-        z: -100
-      radius: 60
-      min-y: 30
-      max-y: 70
-      weight: 2
-      max-chests: 5
-
-  # Zones pour les largages d'urgence
-  supply-drop-zones:
-    # Mine PvP principale
-    main_pvp_mine:
-      world: "world_the_end"
-      center:
-        x: 0
-        y: 60
-        z: 0
-      radius: 150
-      min-y: 50
-      max-y: 80
-      weight: 5
-      max-drops: 12
-
-    # Zone de combat
-    combat_zone:
-      world: "world"
-      center:
-        x: 800
-        y: 70
-        z: 800
-      radius: 100
-      min-y: 65
-      max-y: 85
-      weight: 3
-      max-drops: 8
+      radius: 12
+      min-y: 10
+      max-y: 25
+      weight: 60
+      display-name: "Profondeurs de la Cave"
 
   # Points spécifiques pour certains événements
   specific-locations:
@@ -157,21 +113,11 @@ event-locations:
         y: 75
         z: 50
         weight: 3
-      - world: "world"
-        x: -150
-        y: 80
-        z: 100
+      - world: "MineZ"
+        x: 186
+        y: 140
+        z: 82
         weight: 2
-      - world: "world"
-        x: 250
-        y: 90
-        z: -50
-        weight: 2
-      - world: "world"
-        x: -75
-        y: 65
-        z: -200
-        weight: 1
 
 # Configuration des mobs pour les événements
 event-mobs:
@@ -195,34 +141,109 @@ event-mobs:
       max-health: 1024
       abilities: [ "charge", "roar", "ground_pound" ]
 
-  # Monstres de brèche
+  # Monstres de brèche dimensionnelle
   breach-mobs:
+    # Monstres courants (poids élevé)
+    zombie_warrior:
+      name: "§6Guerrier Zombie"
+      spawn-weight: 8
+      group-size: 3
+      health-multiplier: 1.2
+      damage-multiplier: 1.1
+
+    skeleton_archer:
+      name: "§5Archer Squelette"
+      spawn-weight: 6
+      group-size: 2
+      health-multiplier: 1.0
+      damage-multiplier: 1.3
+
+    spider_venomous:
+      name: "§2Araignée Venimeuse"
+      spawn-weight: 5
+      group-size: 4
+      health-multiplier: 0.8
+      damage-multiplier: 1.4
+
+    # Monstres moyens (poids moyen)
     enderman_shadow:
       name: "§8Enderman des Ombres"
       spawn-weight: 4
       group-size: 2
+      health-multiplier: 1.5
+      damage-multiplier: 1.2
 
-    zombie_warrior:
-      name: "§bZombieWarrior"
-      spawn-weight: 6
-      group-size: 4
-
-    skeleton_archer:
-      name: "§5quelltete"
+    witch_cursed:
+      name: "§dSorcière Maudite"
       spawn-weight: 3
       group-size: 1
+      health-multiplier: 1.3
+      damage-multiplier: 1.0
 
-    geode_aberration:
-      name: "§dShulker Dimensionnel"
+    creeper_explosive:
+      name: "§aCreeper Explosif"
+      spawn-weight: 3
+      group-size: 2
+      health-multiplier: 1.1
+      damage-multiplier: 2.0
+
+    # Monstres rares (poids faible)
+    golem_stone:
+      name: "§7Golem de Pierre"
       spawn-weight: 2
       group-size: 1
+      health-multiplier: 2.0
+      damage-multiplier: 0.8
+
+    geode_aberration:
+      name: "§dAberration Géode"
+      spawn-weight: 2
+      group-size: 1
+      health-multiplier: 1.8
+      damage-multiplier: 1.5
 
 # Configuration des récompenses par événement
 event-rewards:
   breach_containment:
-    participation: 5000      # Argent pour participation
-    bonus-per-kill: 500     # Bonus par monstre tué
-    top-killer: 15000       # Bonus pour le meilleur tueur
+    # Récompenses de base pour participation
+    participation:
+      beacons: 100-250        # Beacons aléatoires entre 100 et 250
+      tokens: 5000-25000      # Tokens aléatoires entre 5k et 25k
+      keys: "rare:1-2"        # 1-2 clés rares
+      reputation: 5           # +5 réputation de base
+
+    # Bonus pour victoire complète (5 vagues)
+    victory:
+      multiplier: 2.0         # Multiplie les récompenses de base par 2
+      bonus_beacons: 50-100   # 50-100 beacons supplémentaires
+      bonus_keys: "legendary:1" # 1 clé légendaire supplémentaire
+
+    # Récompenses TOP 3
+    top_rewards:
+      first_place:
+        beacons: 1000
+        keys: "crystal:1"
+        armor: "protection_4_unbreaking_3"
+        reputation: 20
+
+      second_place:
+        beacons: 750
+        keys: "legendary:1"
+        armor: "protection_4_unbreaking_3"
+        reputation: 15
+
+      third_place:
+        beacons: 500
+        keys: "legendary:1"
+        armor: "protection_4_unbreaking_3"
+        reputation: 10
+
+    # Bonus de performance
+    performance_bonuses:
+      per_500_score: 5        # +5 réputation par 500 points de score
+      survival_bonus: 5       # +5 réputation si survie complète
+      top_50_percent: 5       # +5 réputation si dans le top 50%
+      max_reputation: 25      # Limite maximale de réputation par événement
 
   daily_boss:
     participation: 10000
@@ -245,26 +266,93 @@ event-rewards:
     win-bonus: 40000
     mvp-bonus: 25000
 
-# Configuration avancée
+# Configuration avancée des événements
 advanced-settings:
+  # Configuration spécifique à la Brèche
+  breach_containment:
+    # Paramètres des vagues
+    waves:
+      total_waves: 5
+      wave_interval: 15      # secondes entre les vagues
+      mob_scaling: true      # Augmente la difficulté par vague
+
+    # Paramètres des monstres
+    mob_spawning:
+      min_mobs_per_wave: 10
+      max_mobs_per_wave: 50
+      mobs_per_player_base: 2
+      mobs_per_player_scaling: 1  # +1 par vague
+
+    # Système d'inactivité
+    inactivity_system:
+      timeout_minutes: 1     # 1 minute sans kill = téléportation
+      teleport_warning: true # Avertir avant téléportation
+
+    # Boss final
+    final_boss:
+      enabled: true
+      type: "ravager_boss"
+      health_scaling: true   # Santé basée sur le nombre de joueurs
+      special_abilities: true
+
   # Système de cooldown personnel
   personal-cooldowns:
-    enabled: true
-    daily_boss: 0          # Pas de cooldown
-    treasure_hunt: 3600    # 1 heure
-    breach_containment: 1800  # 30 minutes
+    enabled: false          # Désactivé pour l'événement coopératif
+    breach_containment: 0   # Pas de cooldown pour cet événement
 
   # Système de notifications
   notifications:
     announce-start: true
-    announce-15min: true
-    announce-5min: true
-    announce-1min: true
+    announce-15min: false    # Désactivé (événement court)
+    announce-5min: false     # Désactivé (événement court)
+    announce-1min: false     # Désactivé (événement court)
+    announce-waves: true     # Annoncer chaque vague
 
-  # Intégration avec les statistiques boss
-  boss-integration:
-    track-damage: true
-    track-deaths: true
+  # Intégration avec les statistiques
+  statistics:
+    track-individual-scores: true
     track-kills: true
-    display-leaderboard: true
+    track-survival: true
+    track-wave-completion: true
     save-detailed-stats: true
+    leaderboard-enabled: true
+
+  # Effets visuels et sonores
+  effects:
+    particle-intensity: "high"  # low, medium, high
+    sound-effects: true
+    player-titles: true
+    boss-bar: false         # Pas de boss bar pour cet événement
+
+# Configuration des zones d'implémentation (pour extension future)
+implementation-zones:
+  # Template pour ajouter de nouvelles zones facilement
+  zone_template:
+    world: "WorldName"      # Nom du monde
+    x: 0                    # Coordonnée X
+    y: 64                   # Coordonnée Y
+    z: 0                    # Coordonnée Z
+    radius: 10              # Rayon de la zone
+    x2: 0                   # Coordonnée X du 2ème point (optionnel)
+    y2: 64                  # Coordonnée Y du 2ème point (optionnel)
+    z2: 0                   # Coordonnée Z du 2ème point (optionnel)
+    radius2: 10             # Rayon du 2ème point (optionnel)
+    weight: 50              # Poids pour la sélection aléatoire
+
+  # Zones de test pour développement
+  debug-zones:
+    test_zone_1:
+      world: "world"
+      x: 100
+      y: 70
+      z: 100
+      radius: 20
+      weight: 100
+
+# Système de debug et logs
+debug:
+  enabled: false
+  log_mob_spawns: false
+  log_player_actions: false
+  log_rewards: false
+  log_wave_progression: true

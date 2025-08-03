@@ -55,7 +55,7 @@ public class EventScheduler {
     private void initializeEventsFromConfig() {
         scheduledEvents.clear();
 
-        for (EventConfigManager.EventScheduleConfig scheduleConfig : configManager.getAllEventSchedules()) {
+        for (EventConfigManager.EventScheduleConfig scheduleConfig : configManager.getAllEventSchedules().values()) {
             if (!scheduleConfig.isEnabled()) {
                 plugin.getLogger().info("§7Événement désactivé: " + scheduleConfig.getId());
                 continue;
@@ -85,7 +85,6 @@ public class EventScheduler {
     private ServerEvent createEventInstance(String eventId) {
         return switch (eventId) {
             case "breach_containment" -> new BreachContainmentEvent(plugin, prisonHook, rewardsManager, configManager, bossStatsManager);
-            case "treasure_hunt" -> new TreasureHuntEvent(plugin, prisonHook, rewardsManager);
             case "daily_boss" -> new DailyBossEvent(plugin, prisonHook, rewardsManager, configManager, bossStatsManager);
             case "treasure_search" -> new TreasureSearchEvent(plugin, prisonHook, rewardsManager);
             case "gang_war" -> new GangWarEvent(plugin, prisonHook, rewardsManager);
@@ -221,9 +220,6 @@ public class EventScheduler {
                 startSupplyDrop();
             }
         }
-
-        // Défis communautaires - Vérifier les conditions
-        checkCommunityChallenge();
     }
 
     /**
@@ -311,21 +307,6 @@ public class EventScheduler {
 
         } catch (Exception e) {
             plugin.getLogger().severe("Erreur événement spontané: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Vérifie et gère les défis communautaires
-     */
-    private void checkCommunityChallenge() {
-        boolean challengeEnabled = configManager.getEventsConfig().getBoolean("community-challenges.enabled", false);
-
-        if (challengeEnabled && !isEventActive("community_challenge")) {
-            if (shouldStartCommunityChallenge()) {
-                CommunityChallenge challenge = new CommunityChallenge(plugin, prisonHook, rewardsManager);
-                activeEvents.put("community_challenge", challenge);
-                challenge.start();
-            }
         }
     }
 

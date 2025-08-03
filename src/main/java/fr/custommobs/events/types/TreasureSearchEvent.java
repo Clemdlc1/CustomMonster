@@ -145,7 +145,6 @@ public class TreasureSearchEvent extends ServerEvent {
         }
 
         calculateResults();
-        distributeRewards();
 
         Bukkit.broadcastMessage("§6§l[TRÉSOR] §eChasse au trésor terminée !");
     }
@@ -167,24 +166,6 @@ public class TreasureSearchEvent extends ServerEvent {
         }
     }
 
-    private void distributeRewards() {
-        for (UUID playerId : participants) {
-            Player player = Bukkit.getPlayer(playerId);
-            if (player == null) continue;
-
-            int treasureCount = treasuresFound.getOrDefault(playerId, 0);
-
-            PrisonTycoonHook.EventReward reward = new PrisonTycoonHook.EventReward()
-                    .beacons(50L * treasureCount)
-                    .tokens(2000L * treasureCount);
-
-            if (treasureCount >= 3) {
-                reward.addItem(prisonHook.createKey("legendary"));
-            }
-
-            prisonHook.giveEventReward(player, reward);
-        }
-    }
 
     private Location generateTreasureLocation(int mineId) {
         // Générer une location aléatoire dans une mine

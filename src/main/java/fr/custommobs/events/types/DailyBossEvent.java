@@ -74,7 +74,7 @@ public class DailyBossEvent extends ServerEvent {
 
         // Annonce de l'événement avec le nom du boss et de l'arène
         Bukkit.broadcastMessage("§0§l💀 BOSS QUOTIDIEN APPARAÎT ! 💀");
-        Bukkit.broadcastMessage("§7§lRendez-vous en §e" + selectedArena.getDisplayName());
+      Bukkit.broadcastMessage("§7§lRendez-vous en §e" + selectedArena.getDisplayName());
         Bukkit.broadcastMessage("§7§lPréparation: §c60 secondes");
 
         // Effets de préparation dans l'arène

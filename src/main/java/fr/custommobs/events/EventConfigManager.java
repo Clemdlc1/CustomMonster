@@ -1,6 +1,7 @@
 package fr.custommobs.events;
 
 import fr.custommobs.CustomMobsPlugin;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
@@ -15,15 +16,16 @@ import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Gestionnaire pour la configuration des événements
+ * Gestionnaire de configuration pour les événements
+ * Version mise à jour pour supporter BreachContainmentEvent
  */
 public class EventConfigManager {
 
     private final CustomMobsPlugin plugin;
-    private final File eventsConfigFile;
+    private File eventsConfigFile;
     private FileConfiguration eventsConfig;
 
-    // Caches pour les données de configuration
+    // Caches pour les configurations
     private final Map<String, EventScheduleConfig> eventSchedules = new HashMap<>();
     private final Map<String, List<EventLocationConfig>> eventLocations = new HashMap<>();
     private final Map<String, EventMobConfig> eventMobs = new HashMap<>();
@@ -31,26 +33,50 @@ public class EventConfigManager {
 
     public EventConfigManager(CustomMobsPlugin plugin) {
         this.plugin = plugin;
-        this.eventsConfigFile = new File(plugin.getDataFolder(), "events.yml");
         loadEventsConfig();
     }
 
     /**
-     * Charge la configuration des événements
+     * Charge le fichier de configuration des événements
      */
-    public void loadEventsConfig() {
+    void loadEventsConfig() {
+        eventsConfigFile = new File(plugin.getDataFolder(), "events.yml");
+
         if (!eventsConfigFile.exists()) {
             plugin.saveResource("events.yml", false);
+            plugin.getLogger().info("Fichier events.yml créé par défaut!");
         }
 
         eventsConfig = YamlConfiguration.loadConfiguration(eventsConfigFile);
 
+        // Charger toutes les configurations
         loadEventSchedules();
         loadEventLocations();
         loadEventMobs();
         loadEventRewards();
 
-        plugin.getLogger().info("§aConfiguration des événements chargée!");
+        plugin.getLogger().info("Configuration des événements chargée!");
+        plugin.getLogger().info("- " + eventSchedules.size() + " plannings d'événements");
+        plugin.getLogger().info("- " + eventLocations.size() + " catégories de zones");
+        plugin.getLogger().info("- " + eventMobs.size() + " monstres configurés");
+        plugin.getLogger().info("- " + eventRewards.size() + " systèmes de récompenses");
+    }
+
+    /**
+     * Recharge la configuration
+     */
+    public void reloadConfig() {
+        eventsConfig = YamlConfiguration.loadConfiguration(eventsConfigFile);
+
+        // Vider les caches
+        eventSchedules.clear();
+        eventLocations.clear();
+        eventMobs.clear();
+        eventRewards.clear();
+
+        // Recharger
+        loadEventsConfig();
+        plugin.getLogger().info("Configuration des événements rechargée!");
     }
 
     /**
@@ -108,13 +134,16 @@ public class EventConfigManager {
             // Charger les zones de largage
             loadLocationCategory("supply-drop-zones", locationsSection);
 
-            // Charger les points spécifiques
+            // Charger les localisations spécifiques
             loadSpecificLocations(locationsSection);
         }
     }
 
-    private void loadLocationCategory(String category, ConfigurationSection locationsSection) {
-        ConfigurationSection categorySection = locationsSection.getConfigurationSection(category);
+    /**
+     * Charge une catégorie de localisation
+     */
+    private void loadLocationCategory(String category, ConfigurationSection parent) {
+        ConfigurationSection categorySection = parent.getConfigurationSection(category);
         if (categorySection != null) {
             List<EventLocationConfig> locations = new ArrayList<>();
 
@@ -125,7 +154,7 @@ public class EventConfigManager {
                         EventLocationConfig config = EventLocationConfig.fromConfig(locationId, locationSection);
                         locations.add(config);
                     } catch (Exception e) {
-                        plugin.getLogger().warning("Erreur lors du chargement de la localisation " + locationId + ": " + e.getMessage());
+                        plugin.getLogger().warning("Erreur lors du chargement de la localisation " + locationId + " dans " + category + ": " + e.getMessage());
                     }
                 }
             }
@@ -137,12 +166,16 @@ public class EventConfigManager {
         }
     }
 
-    private void loadSpecificLocations(ConfigurationSection locationsSection) {
-        ConfigurationSection specificSection = locationsSection.getConfigurationSection("specific-locations");
+    /**
+     * Charge les localisations spécifiques
+     */
+    private void loadSpecificLocations(ConfigurationSection parent) {
+        ConfigurationSection specificSection = parent.getConfigurationSection("specific-locations");
         if (specificSection != null) {
             for (String category : specificSection.getKeys(false)) {
                 if (specificSection.isList(category)) {
-                    List<Map<?, ?>> locationsList = specificSection.getMapList(category);
+                    @SuppressWarnings("unchecked")
+                    List<Map<?, ?>> locationsList = (List<Map<?, ?>>) specificSection.getMapList(category);
                     List<EventLocationConfig> locations = new ArrayList<>();
 
                     for (Map<?, ?> locationMap : locationsList) {
@@ -205,96 +238,141 @@ public class EventConfigManager {
                         EventRewardConfig config = EventRewardConfig.fromConfig(eventId, eventSection);
                         eventRewards.put(eventId, config);
                     } catch (Exception e) {
-                        plugin.getLogger().warning("Erreur lors du chargement des récompenses pour " + eventId + ": " + e.getMessage());
+                        plugin.getLogger().warning("Erreur lors du chargement des récompenses " + eventId + ": " + e.getMessage());
                     }
                 }
             }
         }
     }
 
-    // ===============================
-    // MÉTHODES D'ACCÈS PUBLIC
-    // ===============================
+    // =================================
+    // GETTERS PUBLICS
+    // =================================
+
+    public FileConfiguration getEventsConfig() {
+        return eventsConfig;
+    }
 
     public EventScheduleConfig getEventSchedule(String eventId) {
         return eventSchedules.get(eventId);
     }
 
-    public Collection<EventScheduleConfig> getAllEventSchedules() {
-        return eventSchedules.values();
-    }
-
-    public Location getRandomLocation(String category) {
-        List<EventLocationConfig> locations = eventLocations.get(category);
-        if (locations == null || locations.isEmpty()) {
-            plugin.getLogger().warning("Aucune localisation trouvée pour la catégorie: " + category);
-            return null;
-        }
-
-        // Sélection pondérée
-        int totalWeight = locations.stream().mapToInt(EventLocationConfig::getWeight).sum();
-        if (totalWeight <= 0) { // Avoid division by zero or negative numbers
-            return locations.get(0).getRandomLocation(plugin);
-        }
-        int randomWeight = ThreadLocalRandom.current().nextInt(totalWeight);
-
-        int currentWeight = 0;
-        for (EventLocationConfig location : locations) {
-            currentWeight += location.getWeight();
-            if (randomWeight < currentWeight) {
-                return location.getRandomLocation(plugin);
-            }
-        }
-
-        // Fallback
-        return locations.get(0).getRandomLocation(plugin);
-    }
-
-    public List<Location> getMultipleLocations(String category, int count) {
-        List<Location> result = new ArrayList<>();
-        List<EventLocationConfig> locations = eventLocations.get(category);
-
-        if (locations == null || locations.isEmpty()) {
-            return result;
-        }
-
-        for (int i = 0; i < count; i++) {
-            Location loc = getRandomLocation(category);
-            if (loc != null) {
-                result.add(loc);
-            }
-        }
-
-        return result;
-    }
-
-    public EventMobConfig getEventMob(String category, String mobId) {
-        return eventMobs.get(category + "." + mobId);
+    public List<EventLocationConfig> getEventLocationConfigs(String category) {
+        return eventLocations.getOrDefault(category, new ArrayList<>());
     }
 
     public List<EventMobConfig> getEventMobsInCategory(String category) {
         return eventMobs.entrySet().stream()
                 .filter(entry -> entry.getKey().startsWith(category + "."))
                 .map(Map.Entry::getValue)
-                .toList();
+                .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
     }
 
     public EventRewardConfig getEventRewards(String eventId) {
         return eventRewards.get(eventId);
     }
 
-    public FileConfiguration getEventsConfig() {
-        return eventsConfig;
+    public Map<String, EventScheduleConfig> getAllEventSchedules() {
+        return new HashMap<>(eventSchedules);
     }
 
-    public boolean isEventEnabled(String eventId) {
-        EventScheduleConfig schedule = getEventSchedule(eventId);
-        return schedule != null && schedule.isEnabled();
+    public Map<String, List<EventLocationConfig>> getAllEventLocations() {
+        return new HashMap<>(eventLocations);
     }
 
-    // ===============================
+    // =================================
+    // MÉTHODES UTILITAIRES SPÉCIFIQUES
+    // =================================
+
+    /**
+     * Récupère une zone de brèche aléatoire pondérée
+     */
+    public EventLocationConfig getRandomBreachArea() {
+        return getWeightedRandomLocation("breach-areas");
+    }
+
+    /**
+     * Récupère une localisation aléatoire pondérée d'une catégorie
+     */
+    public EventLocationConfig getWeightedRandomLocation(String category) {
+        List<EventLocationConfig> locations = getEventLocationConfigs(category);
+        if (locations.isEmpty()) return null;
+
+        int totalWeight = locations.stream().mapToInt(EventLocationConfig::getWeight).sum();
+        if (totalWeight <= 0) {
+            return locations.get(ThreadLocalRandom.current().nextInt(locations.size()));
+        }
+
+        int randomWeight = ThreadLocalRandom.current().nextInt(totalWeight);
+        int currentWeight = 0;
+
+        for (EventLocationConfig location : locations) {
+            currentWeight += location.getWeight();
+            if (randomWeight < currentWeight) {
+                return location;
+            }
+        }
+
+        return locations.get(0); // Fallback
+    }
+
+    /**
+     * Valide si toutes les zones de brèche sont disponibles
+     */
+    public boolean validateBreachAreas() {
+        List<EventLocationConfig> breachAreas = getEventLocationConfigs("breach-areas");
+        if (breachAreas.isEmpty()) {
+            plugin.getLogger().severe("Aucune zone de brèche configurée!");
+            return false;
+        }
+
+        int validAreas = 0;
+        for (EventLocationConfig area : breachAreas) {
+            if (area.isWorldAvailable()) {
+                validAreas++;
+            } else {
+                plugin.getLogger().warning("Monde non disponible pour la zone: " + area.getDisplayName());
+            }
+        }
+
+        if (validAreas == 0) {
+            plugin.getLogger().severe("Aucune zone de brèche utilisable!");
+            return false;
+        }
+
+        plugin.getLogger().info("Validation réussie: " + validAreas + "/" + breachAreas.size() + " zones de brèche disponibles");
+        return true;
+    }
+
+    /**
+     * Récupère la configuration avancée d'un événement
+     */
+    public ConfigurationSection getAdvancedSettings(String eventId) {
+        return eventsConfig.getConfigurationSection("advanced-settings." + eventId);
+    }
+
+    /**
+     * Récupère les paramètres de debug
+     */
+    public boolean isDebugEnabled() {
+        return eventsConfig.getBoolean("debug.enabled", false);
+    }
+
+    public boolean shouldLogMobSpawns() {
+        return eventsConfig.getBoolean("debug.log_mob_spawns", false);
+    }
+
+    public boolean shouldLogWaveProgression() {
+        return eventsConfig.getBoolean("debug.log_wave_progression", true);
+    }
+
+    public EventLocationConfig getRandomLocationConfig(String s) {
+        return null;
+    }
+
+    // =================================
     // CLASSES DE CONFIGURATION
-    // ===============================
+    // =================================
 
     public static class EventScheduleConfig {
         private final String id;
@@ -319,25 +397,20 @@ public class EventConfigManager {
         public static EventScheduleConfig fromConfig(String id, ConfigurationSection section) {
             String name = section.getString("name", id);
             boolean enabled = section.getBoolean("enabled", true);
-
-            List<String> dayStrings = section.getStringList("days");
-            List<DayOfWeek> days = dayStrings.stream()
-                    .map(s -> {
-                        try {
-                            return DayOfWeek.valueOf(s.toUpperCase());
-                        } catch (IllegalArgumentException e) {
-                            return null;
-                        }
-                    })
-                    .filter(Objects::nonNull)
-                    .toList();
-
-            String timeString = section.getString("time", "12:00");
-            LocalTime time = LocalTime.parse(timeString);
-
+            String timeStr = section.getString("time", "12:00");
             int duration = section.getInt("duration", 1800);
             String description = section.getString("description", "");
 
+            List<DayOfWeek> days = new ArrayList<>();
+            for (String dayStr : section.getStringList("days")) {
+                try {
+                    days.add(DayOfWeek.valueOf(dayStr.toUpperCase()));
+                } catch (IllegalArgumentException e) {
+                    System.err.println("Jour invalide: " + dayStr);
+                }
+            }
+
+            LocalTime time = LocalTime.parse(timeStr);
             return new EventScheduleConfig(id, name, enabled, days, time, duration, description);
         }
 
@@ -354,15 +427,15 @@ public class EventConfigManager {
     public static class EventLocationConfig {
         private final String id;
         private final String worldName;
-        private final double centerX, centerY, centerZ;
-        private final double radius;
-        private final double minY, maxY;
+        private final int centerX, centerY, centerZ;
+        private final int radius;
+        private final int minY, maxY;
         private final int weight;
         private final String displayName;
         private final Map<String, Object> extraData;
 
-        public EventLocationConfig(String id, String worldName, double centerX, double centerY, double centerZ,
-                                   double radius, double minY, double maxY, int weight, String displayName,
+        public EventLocationConfig(String id, String worldName, int centerX, int centerY, int centerZ,
+                                   int radius, int minY, int maxY, int weight, String displayName,
                                    Map<String, Object> extraData) {
             this.id = id;
             this.worldName = worldName;
@@ -373,30 +446,43 @@ public class EventConfigManager {
             this.minY = minY;
             this.maxY = maxY;
             this.weight = weight;
-            this.displayName = displayName;
+            this.displayName = displayName != null ? displayName : id;
             this.extraData = extraData != null ? new HashMap<>(extraData) : new HashMap<>();
         }
 
         public static EventLocationConfig fromConfig(String id, ConfigurationSection section) {
             String worldName = section.getString("world", "world");
 
+            // Support pour center ou coordonnées directes
             ConfigurationSection centerSection = section.getConfigurationSection("center");
-            double centerX = centerSection != null ? centerSection.getDouble("x", 0) : section.getDouble("x", 0);
-            double centerY = centerSection != null ? centerSection.getDouble("y", 70) : section.getDouble("y", 70);
-            double centerZ = centerSection != null ? centerSection.getDouble("z", 0) : section.getDouble("z", 0);
+            int centerX, centerY, centerZ;
 
-            double radius = section.getDouble("radius", 50);
-            double minY = section.getDouble("min-y", centerY - 10);
-            double maxY = section.getDouble("max-y", centerY + 10);
+            if (centerSection != null) {
+                centerX = centerSection.getInt("x", 0);
+                centerY = centerSection.getInt("y", 64);
+                centerZ = centerSection.getInt("z", 0);
+            } else {
+                centerX = section.getInt("x", 0);
+                centerY = section.getInt("y", 64);
+                centerZ = section.getInt("z", 0);
+            }
+
+            int radius = section.getInt("radius", 10);
+            int minY = section.getInt("min-y", centerY - 5);
+            int maxY = section.getInt("max-y", centerY + 5);
             int weight = section.getInt("weight", 1);
             String displayName = section.getString("display-name", id);
 
             Map<String, Object> extraData = new HashMap<>();
-            if (section.contains("max-chests")) extraData.put("max-chests", section.getInt("max-chests"));
-            if (section.contains("max-drops")) extraData.put("max-drops", section.getInt("max-drops"));
+            for (String key : section.getKeys(false)) {
+                if (!Arrays.asList("world", "center", "x", "y", "z", "radius", "min-y", "max-y",
+                        "weight", "display-name").contains(key)) {
+                    extraData.put(key, section.get(key));
+                }
+            }
 
-            return new EventLocationConfig(id, worldName, centerX, centerY, centerZ,
-                    radius, minY, maxY, weight, displayName, extraData);
+            return new EventLocationConfig(id, worldName, centerX, centerY, centerZ, radius,
+                    minY, maxY, weight, displayName, extraData);
         }
 
         public static EventLocationConfig fromMap(String id, Map<?, ?> map) {
@@ -404,16 +490,16 @@ public class EventConfigManager {
             String worldName = worldObj instanceof String ? (String) worldObj : "world";
 
             Object xObj = map.get("x");
-            double centerX = xObj instanceof Number ? ((Number) xObj).doubleValue() : 0.0;
+            int centerX = xObj instanceof Number ? ((Number) xObj).intValue() : 0;
 
             Object yObj = map.get("y");
-            double centerY = yObj instanceof Number ? ((Number) yObj).doubleValue() : 70.0;
+            int centerY = yObj instanceof Number ? ((Number) yObj).intValue() : 70;
 
             Object zObj = map.get("z");
-            double centerZ = zObj instanceof Number ? ((Number) zObj).doubleValue() : 0.0;
+            int centerZ = zObj instanceof Number ? ((Number) zObj).intValue() : 0;
 
             Object radiusObj = map.get("radius");
-            double radius = radiusObj instanceof Number ? ((Number) radiusObj).doubleValue() : 10.0;
+            int radius = radiusObj instanceof Number ? ((Number) radiusObj).intValue() : 10;
 
             Object weightObj = map.get("weight");
             int weight = weightObj instanceof Number ? ((Number) weightObj).intValue() : 1;
@@ -423,47 +509,46 @@ public class EventConfigManager {
         }
 
         public Location getRandomLocation(CustomMobsPlugin plugin) {
-            World world = plugin.getServer().getWorld(worldName);
+            World world = Bukkit.getWorld(worldName);
             if (world == null) {
-                plugin.getLogger().warning("Monde '" + worldName + "' non trouvé pour la localisation " + id);
+                plugin.getLogger().warning("Monde '" + worldName + "' non trouvé pour la zone " + id);
                 return null;
             }
 
-            // Génère une position aléatoire dans le rayon
+            if (radius <= 0) {
+                return new Location(world, centerX, centerY, centerZ);
+            }
+
             double angle = ThreadLocalRandom.current().nextDouble() * 2 * Math.PI;
             double distance = ThreadLocalRandom.current().nextDouble() * radius;
 
-            double x = centerX + Math.cos(angle) * distance;
-            double z = centerZ + Math.sin(angle) * distance;
-            double y = minY + ThreadLocalRandom.current().nextDouble() * (maxY - minY);
+            int x = centerX + (int) (Math.cos(angle) * distance);
+            int z = centerZ + (int) (Math.sin(angle) * distance);
+            int y = minY + ThreadLocalRandom.current().nextInt(maxY - minY + 1);
 
             return new Location(world, x, y, z);
         }
 
-        public Location getCenterLocation(CustomMobsPlugin plugin) {
-            World world = plugin.getServer().getWorld(worldName);
-            if (world == null) {
-                plugin.getLogger().warning("Monde '" + worldName + "' non trouvé pour la localisation " + id);
-                return null;
-            }
-            return new Location(world, centerX, centerY, centerZ);
+        public boolean isWorldAvailable() {
+            return Bukkit.getWorld(worldName) != null;
         }
 
         // Getters
         public String getId() { return id; }
         public String getWorldName() { return worldName; }
-        public double getCenterX() { return centerX; }
-        public double getCenterY() { return centerY; }
-        public double getCenterZ() { return centerZ; }
-        public double getRadius() { return radius; }
-        public double getMinY() { return minY; }
-        public double getMaxY() { return maxY; }
+        public int getCenterX() { return centerX; }
+        public int getCenterY() { return centerY; }
+        public int getCenterZ() { return centerZ; }
+        public int getRadius() { return radius; }
+        public int getMinY() { return minY; }
+        public int getMaxY() { return maxY; }
         public int getWeight() { return weight; }
         public String getDisplayName() { return displayName; }
         public Map<String, Object> getExtraData() { return new HashMap<>(extraData); }
 
-        public int getMaxChests() { return (int) extraData.getOrDefault("max-chests", 5); }
-        public int getMaxDrops() { return (int) extraData.getOrDefault("max-drops", 8); }
+        public Location getCenterLocation(CustomMobsPlugin plugin) {
+            return null;
+        }
     }
 
     public static class EventMobConfig {
@@ -485,7 +570,26 @@ public class EventConfigManager {
             int groupSize = section.getInt("group-size", 1);
 
             Map<String, Object> extraData = new HashMap<>();
-            if (section.contains("spawn-weight")) extraData.put("spawn-weight", section.getInt("spawn-weight"));
+            extraData.put("name", name);
+
+            // Données spécifiques aux brèches
+            if (section.contains("spawn-weight")) {
+                extraData.put("spawn-weight", section.getInt("spawn-weight"));
+            }
+            if (section.contains("health-multiplier")) {
+                extraData.put("health-multiplier", section.getDouble("health-multiplier"));
+            }
+            if (section.contains("damage-multiplier")) {
+                extraData.put("damage-multiplier", section.getDouble("damage-multiplier"));
+            }
+
+            // Autres données
+            for (String key : section.getKeys(false)) {
+                if (!Arrays.asList("name", "weight", "group-size", "spawn-weight",
+                        "health-multiplier", "damage-multiplier").contains(key)) {
+                    extraData.put(key, section.get(key));
+                }
+            }
 
             return new EventMobConfig(id, weight, groupSize, extraData);
         }
@@ -496,6 +600,9 @@ public class EventConfigManager {
         public int getGroupSize() { return groupSize; }
         public Map<String, Object> getExtraData() { return new HashMap<>(extraData); }
         public int getSpawnWeight() { return (int) extraData.getOrDefault("spawn-weight", weight); }
+        public String getName() { return (String) extraData.getOrDefault("name", id); }
+        public double getHealthMultiplier() { return (double) extraData.getOrDefault("health-multiplier", 1.0); }
+        public double getDamageMultiplier() { return (double) extraData.getOrDefault("damage-multiplier", 1.0); }
     }
 
     public static class EventRewardConfig {
@@ -520,11 +627,13 @@ public class EventConfigManager {
                     Map<String, Integer> tierMap = new HashMap<>();
                     if (tierSection != null) {
                         for (String tierKey : tierSection.getKeys(false)) {
-                            tierMap.put(tierKey, tierSection.getInt(tierKey));
+                            if (tierSection.isInt(tierKey)) {
+                                tierMap.put(tierKey, tierSection.getInt(tierKey));
+                            }
                         }
                     }
                     tieredRewards.put(key, tierMap);
-                } else {
+                } else if (section.isInt(key)) {
                     rewards.put(key, section.getInt(key));
                 }
             }
@@ -538,39 +647,18 @@ public class EventConfigManager {
         public Map<String, Map<String, Integer>> getTieredRewards() { return new HashMap<>(tieredRewards); }
 
         public int getReward(String key) { return rewards.getOrDefault(key, 0); }
-        public int getTieredReward(String category, String tier) {
-            return tieredRewards.getOrDefault(category, new HashMap<>()).getOrDefault(tier, 0);
-        }
-    }
 
-    // Add this method inside your EventConfigManager.java class
-    public EventLocationConfig getRandomLocationConfig(String category) {
-        List<EventLocationConfig> locations = eventLocations.get(category);
-        if (locations == null || locations.isEmpty()) {
-            plugin.getLogger().warning("Aucune localisation trouvée pour la catégorie: " + category);
-            return null;
+        public Map<String, Integer> getTierRewards(String tier) {
+            return tieredRewards.getOrDefault(tier, new HashMap<>());
         }
 
-        // Weighted selection
-        int totalWeight = locations.stream().mapToInt(EventLocationConfig::getWeight).sum();
-        if (totalWeight <= 0) { // Fallback for no/invalid weights
-            return locations.get(ThreadLocalRandom.current().nextInt(locations.size()));
-        }
-        int randomWeight = ThreadLocalRandom.current().nextInt(totalWeight);
-
-        int currentWeight = 0;
-        for (EventLocationConfig location : locations) {
-            currentWeight += location.getWeight();
-            if (randomWeight < currentWeight) {
-                return location;
-            }
+        public int getTierReward(String tier, String key) {
+            Map<String, Integer> tierMap = tieredRewards.get(tier);
+            return tierMap != null ? tierMap.getOrDefault(key, 0) : 0;
         }
 
-        // Fallback
-        return locations.getFirst();
-    }
-
-    public List<EventLocationConfig> getEventLocationConfigs(String category) {
-        return this.eventLocations.getOrDefault(category, new ArrayList<>());
+        public int getTieredReward(String s, String s1) {
+            return 0;
+        }
     }
 }

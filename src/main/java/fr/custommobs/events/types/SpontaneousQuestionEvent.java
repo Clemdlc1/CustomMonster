@@ -64,7 +64,7 @@ public class SpontaneousQuestionEvent extends ServerEvent {
             // Récompense immédiate
             PrisonTycoonHook.EventReward reward = new PrisonTycoonHook.EventReward()
                     .addItem(prisonHook.createKey("legendary"))
-                    .beacons(100);
+                     ;
 
             prisonHook.giveEventReward(player, reward);
 
