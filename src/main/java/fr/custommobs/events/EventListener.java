@@ -30,7 +30,7 @@ public class EventListener implements Listener {
     }
 
     /**
-     * Gère les dégâts aux entités pour les événements
+     * Gère les dégâts aux entités pour les événements - MISE À JOUR
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityDamage(EntityDamageByEntityEvent event) {
@@ -44,10 +44,17 @@ public class EventListener implements Listener {
         if (entity.hasMetadata("breach_mob") || entity.hasMetadata("breach_boss")) {
             ServerEvent breachEvent = scheduler.getActiveEvent("breach_containment");
             if (breachEvent instanceof BreachContainmentEvent) {
-
+                // Gestion existante
             }
         }
-        
+
+        // Chasseur de Trésor - Lutin Trésorier (NOUVEAU)
+        if (entity.hasMetadata("treasure_hunter_lutin")) {
+            ServerEvent treasureEvent = scheduler.getActiveEvent("treasure_hunter");
+            if (treasureEvent instanceof TreasureHunterEvent) {
+                ((TreasureHunterEvent) treasureEvent).onLutinDamaged(player, event.getFinalDamage());
+            }
+        }
 
         // Boss Quotidien
         if (entity.hasMetadata("daily_boss")) {
@@ -59,7 +66,7 @@ public class EventListener implements Listener {
     }
 
     /**
-     * Gère la mort des entités pour les événements
+     * Gère la mort des entités pour les événements - MISE À JOUR
      */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onEntityDeath(EntityDeathEvent event) {
@@ -73,6 +80,14 @@ public class EventListener implements Listener {
             ServerEvent breachEvent = scheduler.getActiveEvent("breach_containment");
             if (breachEvent instanceof BreachContainmentEvent) {
                 ((BreachContainmentEvent) breachEvent).onMobKilled(entity, killer);
+            }
+        }
+
+        // Chasseur de Trésor - Mort/Capture du Lutin Trésorier (NOUVEAU)
+        if (entity.hasMetadata("treasure_hunter_lutin")) {
+            ServerEvent treasureEvent = scheduler.getActiveEvent("treasure_hunter");
+            if (treasureEvent instanceof TreasureHunterEvent) {
+                ((TreasureHunterEvent) treasureEvent).onLutinCaptured(killer);
             }
         }
 

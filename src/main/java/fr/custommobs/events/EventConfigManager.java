@@ -134,6 +134,9 @@ public class EventConfigManager {
             // Charger les zones de largage
             loadLocationCategory("supply-drop-zones", locationsSection);
 
+            // Charger les zones de mine
+            loadLocationCategory("mine-areas", locationsSection);
+
             // Charger les localisations spécifiques
             loadSpecificLocations(locationsSection);
         }

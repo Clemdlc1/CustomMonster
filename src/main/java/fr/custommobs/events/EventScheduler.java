@@ -88,6 +88,7 @@ public class EventScheduler {
             case "daily_boss" -> new DailyBossEvent(plugin, prisonHook, rewardsManager, configManager, bossStatsManager);
             case "treasure_search" -> new TreasureSearchEvent(plugin, prisonHook, rewardsManager);
             case "gang_war" -> new GangWarEvent(plugin, prisonHook, rewardsManager);
+            case "treasure_hunter" -> new TreasureHunterEvent(plugin, prisonHook, rewardsManager, configManager, bossStatsManager); // NOUVEAU
             default -> {
                 plugin.getLogger().warning("Type d'événement inconnu: " + eventId);
                 yield null;

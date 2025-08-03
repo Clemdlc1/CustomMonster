@@ -12,14 +12,14 @@ event-schedules:
     duration: 1200  # 20 minutes en secondes
     description: "Rupture dimensionnelle - 5 vagues de créatures à affronter coopérativement"
 
-  # 11.6 Course au Butin - Hebdomadaire
-  treasure_hunt:
-    name: "Course au Butin"
+  # Événement Chasseur de Trésor (NOUVEAU)
+  treasure_hunter:
+    name: "Chasseur de Trésor"
     enabled: true
-    days: [ "FRIDAY" ]
-    time: "18:00"
-    duration: 900   # 15 minutes
-    description: "Attrapez le lutin trésorier avant qu'il ne s'échappe"
+    days: ["FRIDAY"]  # Vendredi
+    time: "18:00"     # 18h
+    duration: 900     # 15 minutes (900 secondes)
+    description: "Traquez le Lutin Trésorier dans les mines maudites !"
 
   # Boss quotidien - Tous les jours
   daily_boss:
@@ -104,20 +104,32 @@ event-locations:
       weight: 60
       display-name: "Profondeurs de la Cave"
 
-  # Points spécifiques pour certains événements
-  specific-locations:
-    # Point de spawn pour le lutin trésorier
-    treasure_lutin_spawns:
-      - world: "world"
-        x: 50
-        y: 75
-        z: 50
-        weight: 3
-      - world: "MineZ"
-        x: 186
-        y: 140
-        z: 82
-        weight: 2
+mine-areas:
+  deep_caverns:
+    world: "MineZ"
+    display_name: "§8§lCavernes Profondes"
+    center:
+      x: 186
+      y: 138
+      z: 82
+    radius: 5
+    min-y: 135
+    max-y: 150
+    weight: 30
+    enabled: true
+
+  abandoned_shafts:
+    world: "world"
+    display_name: "§7§lGaleries Abandonnées"
+    center:
+      x: 200
+      y: 40
+      z: 200
+    radius: 30
+    min-y: 15
+    max-y: 55
+    weight: 4
+    enabled: true
 
 # Configuration des mobs pour les événements
 event-mobs:
