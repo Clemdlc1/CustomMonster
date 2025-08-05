@@ -25,79 +25,162 @@ custom-mobs:
   # Multiplicateur de vie global
   health-multiplier: 1.0
   # Distance maximale de détection des joueurs
-  detection-range: 16.0
+  detection-range: 20.0
 
 # Zones de spawn
 spawn-zones:
-  # Exemple de zone - Plaines dangereuses
-  dangerous_plains:
-    world: "world"
-    min-x: 100
-    min-y: 60
-    min-z: 100
-    max-x: 200
-    max-y: 80
-    max-z: 200
+  faille:
+    world: "Cave"
+    min-x: -3
+    min-y: -24
+    min-z: -38
+    max-x: 27
+    max-y: -18
+    max-z: -16
     mob-types:
-      - "zombie_warrior"
       - "skeleton_archer"
       - "spider_venomous"
-    max-mobs: 15
-    group-size: 3
-    spawn-interval: 45  # en secondes
+      - "witch_cursed"
+      - "geode_aberration"
+    max-mobs: 25
+    group-size: 4
+    spawn-interval: 30  # en secondes
     enabled: true
 
-  # Exemple de zone - Forêt sombre
-  dark_forest:
-    world: "world"
-    min-x: -150
-    min-y: 60
-    min-z: -150
-    max-x: -50
-    max-y: 90
-    max-z: -50
+  entree_pvp:
+    world: "Cave"
+    min-x: -1
+    min-y: -20
+    min-z: 37
+    max-x: 21
+    max-y: -17
+    max-z: 72
     mob-types:
-      - "enderman_shadow"
-      - "witch_cursed"
+      - "spider_venomous"
+      - "skeleton_archer"
       - "creeper_explosive"
-    max-mobs: 12
-    group-size: 2
-    spawn-interval: 60
+    max-mobs: 20
+    group-size: 3
+    spawn-interval: 45
     enabled: true
 
   # Exemple de zone - Montagnes rocheuses
-  rocky_mountains:
-    world: "world"
-    min-x: 300
-    min-y: 80
-    min-z: 300
-    max-x: 400
-    max-y: 120
-    max-z: 400
+  grotte1:
+    world: "Cave"
+    min-x: 37
+    min-y: -17
+    min-z: 87
+    max-x: 15
+    max-y: -11
+    max-z: 97
     mob-types:
+      - "zombie_warrior"
       - "golem_stone"
+      - "necromancer_dark"
     max-mobs: 8
-    group-size: 1
-    spawn-interval: 120
+    group-size: 3
+    spawn-interval: 45
     enabled: true
 
-  # Exemple de zone - Boss Arena
-  boss_arena:
-    world: "world"
-    min-x: 500
-    min-y: 60
-    min-z: 500
-    max-x: 600
-    max-y: 100
-    max-z: 600
+  grotte2:
+    world: "Cave"
+    min-x: -46
+    min-y: -19
+    min-z: 147
+    max-x: -29
+    max-y: -12
+    max-z: 128
     mob-types:
-      - "ravager_boss"
-      - "wither_boss"
-      - "warden_boss"
-    max-mobs: 1
-    group-size: 1
-    spawn-interval: 300  # 5 minutes
-    enabled: false  # Désactivé par défaut
+      - "skeleton_archer"
+      - "dragon_fire"
+    max-mobs: 8
+    group-size: 3
+    spawn-interval: 45
+    enabled: true
+
+  grotte3:
+    world: "Cave"
+    min-x: -54
+    min-y: -14
+    min-z: 109
+    max-x: -61
+    max-y: -12
+    max-z: 114
+    mob-types:
+      - "creeper_explosive"
+      - "skeleton_archer"
+      - "golem_stone"
+    max-mobs: 12
+    group-size: 3
+    spawn-interval: 45
+    enabled: true
+
+  grotte4:
+    world: "Cave"
+    min-x: -39
+    min-y: -3
+    min-z: 117
+    max-x: -53
+    max-y: -2
+    max-z: 130
+    mob-types:
+      - "skeleton_archer"
+      - "spider_venomous"
+      - "witch_cursed"
+    max-mobs: 12
+    group-size: 3
+    spawn-interval: 45
+    enabled: true
+
+  outside:
+    world: "Cave"
+    min-x: -9
+    min-y: -20
+    min-z: 139
+    max-x: 22
+    max-y: -18
+    max-z: 106
+    mob-types:
+      - "skeleton_archer"
+      - "zombie_warrior"
+      - "creeper_explosive"
+    max-mobs: 12
+    group-size: 3
+    spawn-interval: 45
+    enabled: true
+
+  outsidegrotte:
+    world: "Cave"
+    min-x: 14
+    min-y: -8
+    min-z: 121
+    max-x: 19
+    max-y: -4
+    max-z: 135
+    mob-types:
+      - "golem_stone"
+      - "creeper_explosive"
+    max-mobs: 6
+    group-size: 2
+    spawn-interval: 45
+    enabled: true
+
+  outsideentree:
+    world: "Cave"
+    min-x: -42
+    min-y: -21
+    min-z: 107
+    max-x: 2
+    max-y: -17
+    max-z: 76
+    mob-types:
+      - "skeleton_archer"
+      - "zombie_warrior"
+      - "creeper_explosive"
+    max-mobs: 30
+    group-size: 3
+    spawn-interval: 45
+    enabled: true
 
 # Système de loots
 loot-system:

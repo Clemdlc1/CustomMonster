@@ -27,8 +27,7 @@ public class MonsterDamageListener implements Listener {
             Entity damagerSource = null;
 
             // Si l'attaquant est un projectile (ex: une flèche, une boule de feu de Blaze).
-            if (damager instanceof Projectile) {
-                Projectile projectile = (Projectile) damager;
+            if (damager instanceof Projectile projectile) {
                 ProjectileSource shooter = projectile.getShooter();
 
                 // Nous vérifions si l'entité qui a tiré le projectile est bien une entité.
@@ -49,16 +48,20 @@ public class MonsterDamageListener implements Listener {
     }
 
     /**
-     * Cet événement empêche les Golems de Fer de prendre pour cible les créatures hostiles.
-     * Le golem restera donc passif envers elles.
+     * Cet événement empêche les Golems de Fer ou monstre de s'entretuer
      */
     @EventHandler
     public void onEntityTarget(EntityTargetLivingEntityEvent event) {
-        // Nous vérifions si l'entité qui cherche une cible est un Golem de Fer.
-        if (event.getEntity() instanceof IronGolem) {
-            // Nous vérifions si la cible potentielle est une créature hostile.
-            if (event.getTarget() instanceof Monster) {
-                // Si c'est le cas, nous annulons l'événement de ciblage.
+        Entity entity = event.getEntity();
+        Entity target = event.getTarget();
+
+        if (entity instanceof Monster) {
+            if (target instanceof IronGolem || target instanceof Monster) {
+                event.setCancelled(true);
+            }
+        }
+        else if (entity instanceof IronGolem) {
+            if (target instanceof Monster) {
                 event.setCancelled(true);
             }
         }

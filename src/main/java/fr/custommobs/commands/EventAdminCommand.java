@@ -35,24 +35,18 @@ public class EventAdminCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        switch (args[0].toLowerCase()) {
-            case "start":
-            case "force":
-                return handleStart(sender, args);
-            case "stop":
-                return handleStop(sender, args);
-            case "list":
-                return handleList(sender);
-            case "active":
-                return handleActive(sender);
-            case "reload":
-                return handleReload(sender);
-            case "info":
-                return handleInfo(sender, args);
-            default:
+        return switch (args[0].toLowerCase()) {
+            case "start", "force" -> handleStart(sender, args);
+            case "stop" -> handleStop(sender, args);
+            case "list" -> handleList(sender);
+            case "active" -> handleActive(sender);
+            case "reload" -> handleReload(sender);
+            case "info" -> handleInfo(sender, args);
+            default -> {
                 sendUsage(sender);
-                return true;
-        }
+                yield true;
+            }
+        };
     }
 
     private boolean handleStart(CommandSender sender, String[] args) {

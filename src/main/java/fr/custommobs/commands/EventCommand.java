@@ -31,41 +31,36 @@ public class EventCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!(sender instanceof Player)) {
+        if (!(sender instanceof Player player)) {
             sender.sendMessage("§c§l[ÉVÉNEMENT] §cCette commande ne peut être utilisée que par un joueur!");
             return true;
         }
-
-        Player player = (Player) sender;
 
         if (args.length == 0) {
             showActiveEvents(player);
             return true;
         }
 
-        switch (args[0].toLowerCase()) {
-            case "gangwar":
-                return handleGangWar(player);
-            case "list":
-                return showActiveEvents(player);
-            case "help":
-                return showHelp(player);
-            default:
+        return switch (args[0].toLowerCase()) {
+            case "gangwar" -> handleGangWar(player);
+            case "list" -> showActiveEvents(player);
+            case "help" -> showHelp(player);
+            default -> {
                 player.sendMessage("§c§l[ÉVÉNEMENT] §cCommande inconnue. Utilisez §e/event help §cpour l'aide.");
-                return true;
-        }
+                yield true;
+            }
+        };
     }
 
     private boolean handleGangWar(Player player) {
         ServerEvent gangWarEvent = eventScheduler.getActiveEvent("gang_war");
 
-        if (gangWarEvent == null || !(gangWarEvent instanceof GangWarEvent)) {
+        if (gangWarEvent == null || !(gangWarEvent instanceof GangWarEvent gangWar)) {
             player.sendMessage("§c§l[ÉVÉNEMENT] §cAucune guerre des gangs n'est actuellement active!");
             player.sendMessage("§7Utilisez §e/event list §7pour voir les événements actifs.");
             return true;
         }
 
-        GangWarEvent gangWar = (GangWarEvent) gangWarEvent;
         Map<String, Object> data = gangWar.getScoresData(player);
 
         showGangWarScores(player, data);

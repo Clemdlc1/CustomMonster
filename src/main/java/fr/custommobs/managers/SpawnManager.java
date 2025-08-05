@@ -1,36 +1,50 @@
 package fr.custommobs.managers;
 
 import fr.custommobs.CustomMobsPlugin;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Player;
+import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.util.BoundingBox;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class SpawnManager {
 
     private final CustomMobsPlugin plugin;
     private final Map<String, SpawnZone> spawnZones;
-    private final Map<String, BukkitTask> spawnTasks;
-    private final Map<String, List<LivingEntity>> spawnedMobs;
+    private final Map<String, List<LivingEntity>> spawnedMobsByZone;
+    private final Map<String, Long> zoneCooldowns;
+    private BukkitTask masterSpawnTask;
+
+    // Constantes
+    private static final int MASTER_TICK_INTERVAL = 40;
+    private static final int MAX_SPAWN_ATTEMPTS = 10;
+    private static final double MIN_PLAYER_DISTANCE_SQUARED = 12*12;
+    private static final int MAX_MONSTERS_IN_CAVE = 200;
 
     public SpawnManager(CustomMobsPlugin plugin) {
         this.plugin = plugin;
         this.spawnZones = new HashMap<>();
-        this.spawnTasks = new HashMap<>();
-        this.spawnedMobs = new HashMap<>();
+        // Utilisation de collections thread-safe pour éviter les erreurs dans un contexte asynchrone
+        this.spawnedMobsByZone = new ConcurrentHashMap<>();
+        this.zoneCooldowns = new ConcurrentHashMap<>();
         loadSpawnZones();
         startSpawning();
     }
 
-    /**
-     * Charge les zones de spawn depuis la config
-     */
     private void loadSpawnZones() {
         ConfigurationSection zonesSection = plugin.getConfig().getConfigurationSection("spawn-zones");
         if (zonesSection != null) {
@@ -40,7 +54,8 @@ public class SpawnManager {
                     try {
                         SpawnZone zone = SpawnZone.fromConfig(zoneSection);
                         spawnZones.put(zoneId, zone);
-                        plugin.getLogger().info("Zone de spawn '" + zoneId + "' chargée!");
+                        spawnedMobsByZone.put(zoneId, new CopyOnWriteArrayList<>());
+                        plugin.getLogger().info("Zone de spawn '" + zoneId + "' chargée !");
                     } catch (Exception e) {
                         plugin.getLogger().warning("Erreur lors du chargement de la zone '" + zoneId + "': " + e.getMessage());
                     }
@@ -49,287 +64,259 @@ public class SpawnManager {
         }
     }
 
-    /**
-     * Démarre le système de spawn
-     */
-    private void startSpawning() {
+    public void startSpawning() {
+        // Annule une tâche existante si on recharge le plugin
+        if (masterSpawnTask != null) {
+            masterSpawnTask.cancel();
+        }
+
+        this.masterSpawnTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                // Cette méthode est le coeur de la logique et tourne en asynchrone
+                processAllSpawns();
+            }
+        }.runTaskTimerAsynchronously(plugin, 100L, MASTER_TICK_INTERVAL);
+    }
+
+    private void processAllSpawns() {
+        // 1. Nettoyer les listes et obtenir un décompte précis des mobs actuels par monde.
+        Map<World, Integer> currentMobCounts = cleanAndCountAllMobs();
+
+        long currentTick = Bukkit.getServer().getCurrentTick();
+
+        // 2. Parcourir chaque zone pour décider si un spawn est nécessaire
         for (Map.Entry<String, SpawnZone> entry : spawnZones.entrySet()) {
             String zoneId = entry.getKey();
             SpawnZone zone = entry.getValue();
+            World world = Bukkit.getWorld(zone.worldName());
 
-            BukkitTask task = new BukkitRunnable() {
-                @Override
-                public void run() {
-                    if (zone.isEnabled()) {
-                        spawnMobsInZone(zoneId, zone);
-                    }
-                }
-            }.runTaskTimer(plugin, 100L, zone.getSpawnInterval() * 20L);
+            // --- Vérifications ---
+            if (!zone.enabled() || world == null) continue;
 
-            spawnTasks.put(zoneId, task);
-        }
-    }
+            // Vérification du cooldown de la zone
+            long intervalTicks = zone.spawnInterval() * 20L;
+            if (currentTick - zoneCooldowns.getOrDefault(zoneId, 0L) < intervalTicks) {
+                continue;
+            }
 
-    /**
-     * Spawn des monstres dans une zone avec validation des blocs
-     */
-    private void spawnMobsInZone(String zoneId, SpawnZone zone) {
-        // Nettoie les mobs morts
-        List<LivingEntity> zoneMobs = spawnedMobs.computeIfAbsent(zoneId, k -> new ArrayList<>());
-        zoneMobs.removeIf(LivingEntity::isDead);
+            // Vérification de la limite globale pour le monde "Cave"
+            if ("Cave".equalsIgnoreCase(world.getName()) && currentMobCounts.getOrDefault(world, 0) >= MAX_MONSTERS_IN_CAVE) {
+                continue;
+            }
 
-        // Vérifie si on peut spawn plus de mobs
-        if (zoneMobs.size() >= zone.getMaxMobs()) {
-            return;
-        }
+            // Vérification de la limite de la zone
+            int mobsInZone = spawnedMobsByZone.get(zoneId).size();
+            if (mobsInZone >= zone.maxMobs()) {
+                continue;
+            }
 
-        // Calcule combien de mobs spawner
-        int toSpawn = Math.min(zone.getGroupSize(), zone.getMaxMobs() - zoneMobs.size());
+            // --- Calcul du nombre de mobs à spawner ---
+            int worldCapRoom = Integer.MAX_VALUE;
+            if ("Cave".equalsIgnoreCase(world.getName())) {
+                worldCapRoom = MAX_MONSTERS_IN_CAVE - currentMobCounts.getOrDefault(world, 0);
+            }
 
-        for (int i = 0; i < toSpawn; i++) {
-            String mobType = zone.getRandomMobType();
-            Location spawnLoc = findValidSpawnLocation(zone, 10); // 10 tentatives max
+            int zoneCapRoom = zone.maxMobs() - mobsInZone;
+            int maxToSpawn = Math.min(zone.groupSize(), Math.min(zoneCapRoom, worldCapRoom));
 
-            if (spawnLoc != null && spawnLoc.getWorld() != null) {
-                LivingEntity mob = plugin.getMobManager().spawnCustomMob(mobType, spawnLoc);
-                if (mob != null) {
-                    zoneMobs.add(mob);
+            if (maxToSpawn <= 0) continue;
 
-                    // Marque le mob avec l'ID de la zone
-                    mob.setMetadata("spawn_zone", new org.bukkit.metadata.FixedMetadataValue(plugin, zoneId));
+            // --- Lancement du spawn ---
+            zoneCooldowns.put(zoneId, currentTick); // Mettre à jour le cooldown immédiatement
 
-                    plugin.getLogger().fine("Mob spawné: " + mobType + " dans la zone " + zoneId +
-                            " à " + spawnLoc.getBlockX() + "," + spawnLoc.getBlockY() + "," + spawnLoc.getBlockZ());
+            for (int i = 0; i < maxToSpawn; i++) {
+                String mobType = zone.getRandomMobType();
+                if (mobType == null) continue;
+
+                // La recherche de position reste asynchrone pour la performance
+                Location spawnLocation = findValidSpawnLocation(zone, mobType, MAX_SPAWN_ATTEMPTS);
+
+                if (spawnLocation != null) {
+                    // Le spawn de l'entité doit se faire sur le thread principal
+                    new BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            // On re-vérifie la limite juste avant le spawn pour être 100% sûr
+                            if ("Cave".equalsIgnoreCase(world.getName()) && cleanAndCountAllMobs().getOrDefault(world, 0) >= MAX_MONSTERS_IN_CAVE) {
+                                return;
+                            }
+                            LivingEntity mob = plugin.getMobManager().spawnCustomMob(mobType, spawnLocation);
+                            if (mob != null) {
+                                spawnedMobsByZone.get(zoneId).add(mob);
+                                mob.setMetadata("spawn_zone", new FixedMetadataValue(plugin, zoneId));
+                            }
+                        }
+                    }.runTask(plugin);
                 }
             }
         }
     }
 
     /**
-     * Trouve un emplacement de spawn valide dans une zone
+     * Nettoie les listes de mobs (supprime les morts) et renvoie un décompte à jour par monde.
+     * C'est l'étape cruciale qui fiabilise tout le système.
      */
-    private Location findValidSpawnLocation(SpawnZone zone, int maxAttempts) {
-        World world = org.bukkit.Bukkit.getWorld(zone.getWorldName());
+    private Map<World, Integer> cleanAndCountAllMobs() {
+        Map<World, Integer> counts = new HashMap<>();
+        for (List<LivingEntity> mobList : spawnedMobsByZone.values()) {
+            // Utilise removeIf pour une suppression sûre tout en parcourant la liste
+            mobList.removeIf(mob -> {
+                if (mob == null || mob.isDead() || !mob.isValid()) {
+                    return true; // Marque pour suppression
+                }
+                // Si le mob est valide, on l'ajoute au décompte de son monde
+                counts.merge(mob.getWorld(), 1, Integer::sum);
+                return false; // Garde l'élément
+            });
+        }
+        return counts;
+    }
+
+    private Location findValidSpawnLocation(SpawnZone zone, String mobType, int maxAttempts) {
+        World world = plugin.getServer().getWorld(zone.worldName());
         if (world == null) return null;
 
-        Random random = new Random();
+        BoundingBox mobBoundingBox = getMobBoundingBox(mobType);
 
         for (int attempt = 0; attempt < maxAttempts; attempt++) {
-            // Génère des coordonnées aléatoires dans la zone
-            int x = random.nextInt(zone.getMaxX() - zone.getMinX() + 1) + zone.getMinX();
-            int z = random.nextInt(zone.getMaxZ() - zone.getMinZ() + 1) + zone.getMinZ();
+            int x = ThreadLocalRandom.current().nextInt(zone.minX(), zone.maxX() + 1);
+            int z = ThreadLocalRandom.current().nextInt(zone.minZ(), zone.maxZ() + 1);
 
-            // Trouve la surface la plus haute dans la plage Y définie
-            Location testLoc = findSafeLocationAt(world, x, z, zone.getMinY(), zone.getMaxY());
+            for (int y = zone.maxY(); y >= zone.minY(); y--) {
+                Location potentialLocation = new Location(world, x + 0.5, y, z + 0.5);
+                Block groundBlock = potentialLocation.getBlock().getRelative(BlockFace.DOWN);
 
-            if (testLoc != null && isValidSpawnLocation(testLoc)) {
-                return testLoc;
+                if (isSolidAndSafeGround(groundBlock.getType())) {
+                    if (isSafeForMob(potentialLocation, mobBoundingBox) && !isNearPlayer(potentialLocation)) {
+                        return potentialLocation;
+                    }
+                    break;
+                }
             }
         }
-
-        plugin.getLogger().fine("Impossible de trouver un emplacement valide dans la zone après " + maxAttempts + " tentatives");
         return null;
     }
 
-    /**
-     * Trouve un emplacement sûr à des coordonnées données
-     */
-    private Location findSafeLocationAt(World world, int x, int z, int minY, int maxY) {
-        // Commence par le haut et descend pour trouver un bloc solide
-        for (int y = maxY; y >= minY; y--) {
-            Location testLoc = new Location(world, x + 0.5, y, z + 0.5);
+    private boolean isSafeForMob(Location location, BoundingBox mobBoundingBox) {
+        double height = mobBoundingBox.getHeight();
+        double width = Math.max(mobBoundingBox.getWidthX(), mobBoundingBox.getWidthZ());
+        int checkRadius = (int) Math.ceil(width / 2.0);
 
-            if (isValidSpawnLocation(testLoc)) {
-                return testLoc;
+        for (int y = 0; y < Math.ceil(height); y++) {
+            for (int x = -checkRadius; x <= checkRadius; x++) {
+                for (int z = -checkRadius; z <= checkRadius; z++) {
+                    Block block = location.clone().add(x, y, z).getBlock();
+                    if (!block.isPassable() && block.getType() != Material.WATER) {
+                        return false;
+                    }
+                }
             }
         }
-
-        return null;
+        Block below = location.getBlock().getRelative(BlockFace.DOWN);
+        return below.getRelative(BlockFace.DOWN, 5).getType().isSolid();
     }
 
-    /**
-     * Vérifie si un emplacement est valide pour le spawn
-     */
-    private boolean isValidSpawnLocation(Location location) {
-        if (location == null || location.getWorld() == null) {
+    private boolean isSolidAndSafeGround(Material material) {
+        if (!material.isSolid()) {
             return false;
         }
-
-        Block groundBlock = location.getBlock().getRelative(0, -1, 0);
-
-        // Le sol doit être solide et pas dangereux
-        if (!isValidGroundBlock(groundBlock)) {
-            return false;
-        }
-
-        // Vérifications supplémentaires de sécurité
-        if (isInWater(location) || isInLava(location) || isTooHigh(location)) {
-            return false;
-        }
-
-        // Évite les spawns trop proches des joueurs
-        if (isTooCloseToPlayers(location, 8.0)) {
-            return false;
-        }
-
-        return true;
+        return switch (material) {
+            case LAVA, MAGMA_BLOCK, CACTUS, CAMPFIRE, SOUL_CAMPFIRE, SWEET_BERRY_BUSH -> false;
+            default -> !material.name().contains("PRESSURE_PLATE");
+        };
     }
 
-    /**
-     * Vérifie si un bloc est un bon sol pour le spawn
-     */
-    private boolean isValidGroundBlock(Block block) {
-        Material type = block.getType();
-
-        // Blocs solides acceptables
-        if (!type.isSolid()) {
-            return false;
-        }
-
-        // Blocs dangereux à éviter
-        if (type == Material.LAVA ||
-                type == Material.MAGMA_BLOCK ||
-                type == Material.CACTUS ||
-                type == Material.CAMPFIRE ||
-                type == Material.SOUL_CAMPFIRE ||
-                type.name().contains("PRESSURE_PLATE") ||
-                type == Material.TRIPWIRE_HOOK) {
-            return false;
-        }
-
-        return true;
-    }
-
-    /**
-     * Vérifie si l'emplacement est dans l'eau
-     */
-    private boolean isInWater(Location location) {
-        Block block = location.getBlock();
-        return block.getType() == Material.WATER;
-    }
-
-    /**
-     * Vérifie si l'emplacement est dans la lave
-     */
-    private boolean isInLava(Location location) {
-        Block block = location.getBlock();
-        return block.getType() == Material.LAVA;
-    }
-
-    /**
-     * Vérifie si l'emplacement est trop haut (risque de chute mortelle)
-     */
-    private boolean isTooHigh(Location location) {
-        // Vérifie s'il y a un vide de plus de 10 blocs en dessous
-        Location below = location.clone();
-        for (int i = 1; i <= 10; i++) {
-            below.subtract(0, 1, 0);
-            if (below.getBlock().getType().isSolid()) {
-                return false; // Il y a un sol en dessous
+    private boolean isNearPlayer(Location location) {
+        for (Player player : location.getWorld().getPlayers()) {
+            if (player.getLocation().distanceSquared(location) < MIN_PLAYER_DISTANCE_SQUARED) {
+                return true;
             }
         }
-        return true; // Pas de sol trouvé dans les 10 blocs
+        return false;
     }
 
-    /**
-     * Vérifie si l'emplacement est trop proche des joueurs
-     */
-    private boolean isTooCloseToPlayers(Location location, double minDistance) {
-        return location.getWorld().getPlayers().stream()
-                .anyMatch(player -> player.getLocation().distance(location) < minDistance);
+    private BoundingBox getMobBoundingBox(String mobId) {
+        String normalizedMobId = mobId.toLowerCase().trim();
+        switch (normalizedMobId) {
+            case "zombie": case "witch": case "evoker": return new BoundingBox(0, 0, 0, 0.6, 1.95, 0.6);
+            case "skeleton": return new BoundingBox(0, 0, 0, 0.6, 1.99, 0.6);
+            case "creeper": return new BoundingBox(0, 0, 0, 0.6, 1.7, 0.6);
+            case "enderman": return new BoundingBox(0, 0, 0, 0.6, 2.9, 0.6);
+            case "spider": return new BoundingBox(0, 0, 0, 1.4, 0.9, 1.4);
+            case "blaze": return new BoundingBox(0, 0, 0, 0.6, 1.8, 0.6);
+            case "ravager": return new BoundingBox(0, 0, 0, 1.95, 2.2, 1.95);
+            case "iron_golem": return new BoundingBox(0, 0, 0, 1.4, 2.7, 1.4);
+            case "shulker": return new BoundingBox(0, 0, 0, 1.0, 1.0, 1.0);
+            case "wither": return new BoundingBox(0, 0, 0, 0.9, 3.5, 0.9);
+            case "baby_zombie": return new BoundingBox(0, 0, 0, 0.3, 0.975, 0.3);
+            default:
+                try {
+                    EntityType entityType = EntityType.valueOf(normalizedMobId.toUpperCase());
+                    org.bukkit.entity.Entity entity = Bukkit.getWorlds().getFirst().spawnEntity(new Location(Bukkit.getWorlds().getFirst(), 0, -100, 0), entityType);
+                    BoundingBox box = entity.getBoundingBox();
+                    entity.remove();
+                    return box;
+                } catch (Exception e) {
+                    // Si tout échoue, retourne une taille générique
+                    return new BoundingBox(0, 0, 0, 0.8, 1.9, 0.8);
+                }
+        }
     }
 
-    /**
-     * Arrête tout le système de spawn
-     */
+
     public void stopAllSpawning() {
-        for (BukkitTask task : spawnTasks.values()) {
-            task.cancel();
+        if (masterSpawnTask != null) {
+            masterSpawnTask.cancel();
+            masterSpawnTask = null;
         }
-        spawnTasks.clear();
 
-        // Supprime tous les mobs spawnés
-        for (List<LivingEntity> mobs : spawnedMobs.values()) {
+        for (List<LivingEntity> mobs : spawnedMobsByZone.values()) {
             mobs.forEach(mob -> {
-                if (!mob.isDead()) {
+                if (mob != null && !mob.isDead()) {
                     mob.remove();
                 }
             });
+            mobs.clear();
         }
-        spawnedMobs.clear();
+        spawnedMobsByZone.clear();
+        zoneCooldowns.clear();
+        plugin.getLogger().info("La tâche de spawn a été arrêtée et les mobs supprimés.");
     }
 
-    /**
-     * Récupère les zones de spawn
-     */
     public Map<String, SpawnZone> getSpawnZones() {
         return Collections.unmodifiableMap(spawnZones);
     }
 
-    /**
-     * Classe pour représenter une zone de spawn
-     */
-    public static class SpawnZone {
-        private final String worldName;
-        private final int minX, minY, minZ;
-        private final int maxX, maxY, maxZ;
-        private final List<String> mobTypes;
-        private final int maxMobs;
-        private final int groupSize;
-        private final int spawnInterval;
-        private final boolean enabled;
+    public record SpawnZone(String worldName, int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                            List<String> mobTypes, int maxMobs, int groupSize, int spawnInterval, boolean enabled) {
+            public SpawnZone(String worldName, int minX, int minY, int minZ, int maxX, int maxY, int maxZ, List<String> mobTypes, int maxMobs, int groupSize, int spawnInterval, boolean enabled) {
+                this.worldName = worldName;
+                this.minX = Math.min(minX, maxX);
+                this.minY = Math.min(minY, maxY);
+                this.minZ = Math.min(minZ, maxZ);
+                this.maxX = Math.max(minX, maxX);
+                this.maxY = Math.max(minY, maxY);
+                this.maxZ = Math.max(minZ, maxZ);
+                this.mobTypes = mobTypes;
+                this.maxMobs = maxMobs;
+                this.groupSize = groupSize;
+                this.spawnInterval = spawnInterval;
+                this.enabled = enabled;
+            }
 
-        public SpawnZone(String worldName, int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
-                         List<String> mobTypes, int maxMobs, int groupSize, int spawnInterval, boolean enabled) {
-            this.worldName = worldName;
-            this.minX = Math.min(minX, maxX);
-            this.minY = Math.min(minY, maxY);
-            this.minZ = Math.min(minZ, maxZ);
-            this.maxX = Math.max(minX, maxX);
-            this.maxY = Math.max(minY, maxY);
-            this.maxZ = Math.max(minZ, maxZ);
-            this.mobTypes = mobTypes;
-            this.maxMobs = maxMobs;
-            this.groupSize = groupSize;
-            this.spawnInterval = spawnInterval;
-            this.enabled = enabled;
+            public static SpawnZone fromConfig(ConfigurationSection section) {
+                return new SpawnZone(section.getString("world", "world"), section.getInt("min-x"), section.getInt("min-y"), section.getInt("min-z"), section.getInt("max-x"), section.getInt("max-y"), section.getInt("max-z"), section.getStringList("mob-types"), section.getInt("max-mobs", 10), section.getInt("group-size", 3), section.getInt("spawn-interval", 60), section.getBoolean("enabled", true));
+            }
+
+        @Override
+        public List<String> mobTypes() {
+            return Collections.unmodifiableList(mobTypes);
         }
 
-        public static SpawnZone fromConfig(ConfigurationSection section) {
-            String worldName = section.getString("world", "world");
-            int minX = section.getInt("min-x");
-            int minY = section.getInt("min-y");
-            int minZ = section.getInt("min-z");
-            int maxX = section.getInt("max-x");
-            int maxY = section.getInt("max-y");
-            int maxZ = section.getInt("max-z");
-            List<String> mobTypes = section.getStringList("mob-types");
-            int maxMobs = section.getInt("max-mobs", 10);
-            int groupSize = section.getInt("group-size", 3);
-            int spawnInterval = section.getInt("spawn-interval", 60);
-            boolean enabled = section.getBoolean("enabled", true);
-
-            return new SpawnZone(worldName, minX, minY, minZ, maxX, maxY, maxZ,
-                    mobTypes, maxMobs, groupSize, spawnInterval, enabled);
+            public String getRandomMobType() {
+                if (mobTypes.isEmpty()) return null;
+                return mobTypes.get(ThreadLocalRandom.current().nextInt(mobTypes.size()));
+            }
         }
-
-        // Getters
-        public String getWorldName() { return worldName; }
-        public int getMinX() { return minX; }
-        public int getMinY() { return minY; }
-        public int getMinZ() { return minZ; }
-        public int getMaxX() { return maxX; }
-        public int getMaxY() { return maxY; }
-        public int getMaxZ() { return maxZ; }
-        public List<String> getMobTypes() { return Collections.unmodifiableList(mobTypes); }
-        public int getMaxMobs() { return maxMobs; }
-        public int getGroupSize() { return groupSize; }
-        public int getSpawnInterval() { return spawnInterval; }
-        public boolean isEnabled() { return enabled; }
-
-        public String getRandomMobType() {
-            if (mobTypes.isEmpty()) return null;
-            return mobTypes.get(new Random().nextInt(mobTypes.size()));
-        }
-    }
 }

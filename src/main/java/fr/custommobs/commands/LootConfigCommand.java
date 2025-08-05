@@ -38,31 +38,26 @@ public class LootConfigCommand implements CommandExecutor, TabCompleter, Listene
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!(sender instanceof Player)) {
+        if (!(sender instanceof Player player)) {
             sender.sendMessage(ChatColor.RED + "Cette commande ne peut être utilisée que par un joueur!");
             return true;
         }
-
-        Player player = (Player) sender;
 
         if (args.length == 0) {
             sendUsage(player);
             return true;
         }
 
-        switch (args[0].toLowerCase()) {
-            case "add":
-                return handleAdd(player, args);
-            case "list":
-                return handleList(player, args);
-            case "save":
-                return handleSave(player);
-            case "load":
-                return handleLoad(player);
-            default:
+        return switch (args[0].toLowerCase()) {
+            case "add" -> handleAdd(player, args);
+            case "list" -> handleList(player, args);
+            case "save" -> handleSave(player);
+            case "load" -> handleLoad(player);
+            default -> {
                 sendUsage(player);
-                return true;
-        }
+                yield true;
+            }
+        };
     }
 
     private boolean handleAdd(Player player, String[] args) {
@@ -152,13 +147,13 @@ public class LootConfigCommand implements CommandExecutor, TabCompleter, Listene
 
         for (int i = 0; i < Math.min(loots.size(), 45); i++) {
             LootManager.LootEntry loot = loots.get(i);
-            ItemStack displayItem = loot.getItem().clone();
+            ItemStack displayItem = loot.item().clone();
             ItemMeta meta = displayItem.getItemMeta();
 
             if (meta != null) {
                 List<String> lore = meta.hasLore() ? meta.getLore() : new ArrayList<>();
                 lore.add("");
-                lore.add(ChatColor.YELLOW + "Chance: " + ChatColor.WHITE + (loot.getChance() * 100) + "%");
+                lore.add(ChatColor.YELLOW + "Chance: " + ChatColor.WHITE + (loot.chance() * 100) + "%");
                 lore.add(ChatColor.RED + "SHIFT+clic pour supprimer");
                 meta.setLore(lore);
                 displayItem.setItemMeta(meta);
@@ -192,8 +187,7 @@ public class LootConfigCommand implements CommandExecutor, TabCompleter, Listene
 
         event.setCancelled(true);
 
-        if (!(event.getWhoClicked() instanceof Player)) return;
-        Player player = (Player) event.getWhoClicked();
+        if (!(event.getWhoClicked() instanceof Player player)) return;
 
         if (event.getClickedInventory() == null || event.getCurrentItem() == null) return;
 

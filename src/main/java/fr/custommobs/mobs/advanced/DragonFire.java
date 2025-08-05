@@ -101,7 +101,7 @@ public class DragonFire extends CustomMob {
                 .map(p -> p.getLocation().toVector())
                 .reduce(Vector::add)
                 .map(v -> v.multiply(1.0 / targets.size()))
-                .orElse(targets.get(0).getLocation().toVector());
+                .orElse(targets.getFirst().getLocation().toVector());
 
         new BukkitRunnable() {
             int waves = 0;

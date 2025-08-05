@@ -2,6 +2,7 @@ package fr.custommobs.listeners;
 
 import fr.custommobs.CustomMobsPlugin;
 import fr.custommobs.mobs.CustomMob;
+import org.bukkit.Location;
 import org.bukkit.Sound;
 import org.bukkit.Particle;
 import org.bukkit.entity.*;
@@ -11,6 +12,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntityTeleportEvent;
 
 public class MobSpawnListener implements Listener {
 
@@ -132,8 +134,7 @@ public class MobSpawnListener implements Listener {
         Player attacker = null;
         if (event.getDamager() instanceof Player) {
             attacker = (Player) event.getDamager();
-        } else if (event.getDamager() instanceof Projectile) {
-            Projectile projectile = (Projectile) event.getDamager();
+        } else if (event.getDamager() instanceof Projectile projectile) {
             if (projectile.getShooter() instanceof Player) {
                 attacker = (Player) projectile.getShooter();
             }
@@ -153,4 +154,24 @@ public class MobSpawnListener implements Listener {
             attacker.getWorld().spawnParticle(Particle.WITCH, attacker.getEyeLocation(), 15, 0.5, 0.5, 0.5);
         }
     }
+
+    /**
+     * Réduit la portée de téléportation de l'Aberration Géodique.
+     */
+    @EventHandler
+    public void onShulkerTeleport(EntityTeleportEvent event) {
+        Entity entity = event.getEntity();
+        if (CustomMob.isCustomMob(entity) && "geode_aberration".equals(CustomMob.getCustomMobId(entity))) {
+            Location from = event.getFrom();
+            Location to = event.getTo();
+            if (to == null) {
+                return;
+            }
+            double distance = from.distance(to);
+            if (distance > 4) {
+                event.setCancelled(true);
+            }
+        }
+    }
+
 }

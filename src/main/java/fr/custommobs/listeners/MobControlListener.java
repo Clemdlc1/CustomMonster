@@ -63,8 +63,7 @@ public class MobControlListener implements Listener {
         }
 
         // Empêche les monstres custom de se cibler entre eux
-        if (event.getTarget() instanceof LivingEntity) {
-            LivingEntity target = (LivingEntity) event.getTarget();
+        if (event.getTarget() instanceof LivingEntity target) {
 
             if (CustomMob.isCustomMob(target)) {
                 event.setCancelled(true);
@@ -72,8 +71,7 @@ public class MobControlListener implements Listener {
             }
 
             // Empêche de cibler les joueurs en créatif/spectateur
-            if (target instanceof Player) {
-                Player player = (Player) target;
+            if (target instanceof Player player) {
                 if (player.getGameMode() == org.bukkit.GameMode.CREATIVE ||
                         player.getGameMode() == org.bukkit.GameMode.SPECTATOR) {
                     event.setCancelled(true);

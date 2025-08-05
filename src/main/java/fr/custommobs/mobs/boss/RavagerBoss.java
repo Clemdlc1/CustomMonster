@@ -159,7 +159,7 @@ public class RavagerBoss extends CustomMob {
     }
 
     private void handlePhase3Multiplayer(Player target, double distance, long currentTime, List<Player> players) {
-        if (!isEnraged && currentTime - lastRage > (45000 - players.size() * 5000)) {
+        if (!isEnraged && currentTime - lastRage > (45000 - players.size() * 5000L)) {
             enterRageMode();
         }
 
@@ -212,7 +212,7 @@ public class RavagerBoss extends CustomMob {
                     double score2 = calculateTargetScore(p2);
                     return Double.compare(score1, score2);
                 })
-                .orElse(players.get(0));
+                .orElse(players.getFirst());
     }
 
     private double calculateTargetScore(Player player) {

@@ -34,11 +34,8 @@ public class EventListener implements Listener {
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityDamage(EntityDamageByEntityEvent event) {
-        if (!(event.getEntity() instanceof LivingEntity)) return;
-        if (!(event.getDamager() instanceof Player)) return;
-
-        LivingEntity entity = (LivingEntity) event.getEntity();
-        Player player = (Player) event.getDamager();
+        if (!(event.getEntity() instanceof LivingEntity entity)) return;
+        if (!(event.getDamager() instanceof Player player)) return;
 
         // Brèche - Monstres de brèche
         if (entity.hasMetadata("breach_mob") || entity.hasMetadata("breach_boss")) {

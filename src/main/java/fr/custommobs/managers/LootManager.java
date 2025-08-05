@@ -69,12 +69,12 @@ public class LootManager {
         double globalMultiplier = plugin.getConfig().getDouble("loot-system.chance-multiplier", 1.0);
 
         for (LootEntry loot : loots) {
-            double finalChance = loot.getChance() * globalMultiplier;
+            double finalChance = loot.chance() * globalMultiplier;
 
             if (Math.random() <= finalChance) {
-                entity.getWorld().dropItemNaturally(entity.getLocation(), loot.getItem());
+                entity.getWorld().dropItemNaturally(entity.getLocation(), loot.item());
                 droppedItems++;
-                plugin.getLogger().fine("Loot droppé pour " + mobId + ": " + loot.getItem().getType());
+                plugin.getLogger().fine("Loot droppé pour " + mobId + ": " + loot.item().getType());
             }
         }
 
@@ -97,8 +97,8 @@ public class LootManager {
                     LootEntry loot = loots.get(i);
                     String path = "loots." + mobId + "." + i;
 
-                    lootConfig.set(path + ".item", loot.getItem());
-                    lootConfig.set(path + ".chance", loot.getChance());
+                    lootConfig.set(path + ".item", loot.item());
+                    lootConfig.set(path + ".chance", loot.chance());
                 }
             }
 
@@ -160,29 +160,23 @@ public class LootManager {
     }
 
     /**
-     * Classe interne pour représenter un loot
-     */
-    public static class LootEntry {
-        private final ItemStack item;
-        private final double chance;
+         * Classe interne pour représenter un loot
+         */
+        public record LootEntry(ItemStack item, double chance) {
+            public LootEntry(ItemStack item, double chance) {
+                this.item = item.clone(); // Important: clone pour éviter les modifications
+                this.chance = Math.max(0.0, Math.min(1.0, chance)); // Entre 0 et 1
+            }
 
-        public LootEntry(ItemStack item, double chance) {
-            this.item = item.clone(); // Important: clone pour éviter les modifications
-            this.chance = Math.max(0.0, Math.min(1.0, chance)); // Entre 0 et 1
-        }
+            @Override
+            public ItemStack item() {
+                return item.clone();
+            }
 
-        public ItemStack getItem() {
-            return item.clone();
+            public String getDisplayName() {
+                return item.hasItemMeta() && item.getItemMeta().hasDisplayName()
+                        ? item.getItemMeta().getDisplayName()
+                        : item.getType().name();
+            }
         }
-
-        public double getChance() {
-            return chance;
-        }
-
-        public String getDisplayName() {
-            return item.hasItemMeta() && item.getItemMeta().hasDisplayName()
-                    ? item.getItemMeta().getDisplayName()
-                    : item.getType().name();
-        }
-    }
 }

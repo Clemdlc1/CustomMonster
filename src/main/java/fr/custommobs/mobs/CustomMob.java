@@ -144,8 +144,7 @@ public abstract class CustomMob {
         double minDistanceSq = Double.MAX_VALUE; // On compare la distance au carré pour éviter les calculs de racine carrée
 
         for (Entity entity : entity.getNearbyEntities(radius, radius, radius)) {
-            if (entity instanceof Player) {
-                Player player = (Player) entity;
+            if (entity instanceof Player player) {
                 if (player.getGameMode() != GameMode.SURVIVAL && player.getGameMode() != GameMode.ADVENTURE) {
                     continue;
                 }
@@ -172,7 +171,7 @@ public abstract class CustomMob {
      */
     public static String getCustomMobId(Entity entity) {
         if (entity.hasMetadata("custom_mob_id")) {
-            return entity.getMetadata("custom_mob_id").get(0).asString();
+            return entity.getMetadata("custom_mob_id").getFirst().asString();
         }
         return null;
     }

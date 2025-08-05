@@ -301,7 +301,7 @@ public class EventConfigManager {
         List<EventLocationConfig> locations = getEventLocationConfigs(category);
         if (locations.isEmpty()) return null;
 
-        int totalWeight = locations.stream().mapToInt(EventLocationConfig::getWeight).sum();
+        int totalWeight = locations.stream().mapToInt(EventLocationConfig::weight).sum();
         if (totalWeight <= 0) {
             return locations.get(ThreadLocalRandom.current().nextInt(locations.size()));
         }
@@ -310,13 +310,13 @@ public class EventConfigManager {
         int currentWeight = 0;
 
         for (EventLocationConfig location : locations) {
-            currentWeight += location.getWeight();
+            currentWeight += location.weight();
             if (randomWeight < currentWeight) {
                 return location;
             }
         }
 
-        return locations.get(0); // Fallback
+        return locations.getFirst(); // Fallback
     }
 
     /**
@@ -334,7 +334,7 @@ public class EventConfigManager {
             if (area.isWorldAvailable()) {
                 validAreas++;
             } else {
-                plugin.getLogger().warning("Monde non disponible pour la zone: " + area.getDisplayName());
+                plugin.getLogger().warning("Monde non disponible pour la zone: " + area.displayName());
             }
         }
 
@@ -377,291 +377,275 @@ public class EventConfigManager {
     // CLASSES DE CONFIGURATION
     // =================================
 
-    public static class EventScheduleConfig {
-        private final String id;
-        private final String name;
-        private final boolean enabled;
-        private final List<DayOfWeek> days;
-        private final LocalTime time;
-        private final int duration;
-        private final String description;
+    public record EventScheduleConfig(String id, String name, boolean enabled, List<DayOfWeek> days, LocalTime time,
+                                      int duration, String description) {
+            public EventScheduleConfig(String id, String name, boolean enabled, List<DayOfWeek> days,
+                                       LocalTime time, int duration, String description) {
+                this.id = id;
+                this.name = name;
+                this.enabled = enabled;
+                this.days = new ArrayList<>(days);
+                this.time = time;
+                this.duration = duration;
+                this.description = description;
+            }
 
-        public EventScheduleConfig(String id, String name, boolean enabled, List<DayOfWeek> days,
-                                   LocalTime time, int duration, String description) {
-            this.id = id;
-            this.name = name;
-            this.enabled = enabled;
-            this.days = new ArrayList<>(days);
-            this.time = time;
-            this.duration = duration;
-            this.description = description;
-        }
+            public static EventScheduleConfig fromConfig(String id, ConfigurationSection section) {
+                String name = section.getString("name", id);
+                boolean enabled = section.getBoolean("enabled", true);
+                String timeStr = section.getString("time", "12:00");
+                int duration = section.getInt("duration", 1800);
+                String description = section.getString("description", "");
 
-        public static EventScheduleConfig fromConfig(String id, ConfigurationSection section) {
-            String name = section.getString("name", id);
-            boolean enabled = section.getBoolean("enabled", true);
-            String timeStr = section.getString("time", "12:00");
-            int duration = section.getInt("duration", 1800);
-            String description = section.getString("description", "");
-
-            List<DayOfWeek> days = new ArrayList<>();
-            for (String dayStr : section.getStringList("days")) {
-                try {
-                    days.add(DayOfWeek.valueOf(dayStr.toUpperCase()));
-                } catch (IllegalArgumentException e) {
-                    System.err.println("Jour invalide: " + dayStr);
+                List<DayOfWeek> days = new ArrayList<>();
+                for (String dayStr : section.getStringList("days")) {
+                    try {
+                        days.add(DayOfWeek.valueOf(dayStr.toUpperCase()));
+                    } catch (IllegalArgumentException e) {
+                        System.err.println("Jour invalide: " + dayStr);
+                    }
                 }
+
+                LocalTime time = LocalTime.parse(timeStr);
+                return new EventScheduleConfig(id, name, enabled, days, time, duration, description);
             }
 
-            LocalTime time = LocalTime.parse(timeStr);
-            return new EventScheduleConfig(id, name, enabled, days, time, duration, description);
+        @Override
+        public List<DayOfWeek> days() {
+            return new ArrayList<>(days);
+        }
         }
 
-        // Getters
-        public String getId() { return id; }
-        public String getName() { return name; }
-        public boolean isEnabled() { return enabled; }
-        public List<DayOfWeek> getDays() { return new ArrayList<>(days); }
-        public LocalTime getTime() { return time; }
-        public int getDuration() { return duration; }
-        public String getDescription() { return description; }
-    }
-
-    public static class EventLocationConfig {
-        private final String id;
-        private final String worldName;
-        private final int centerX, centerY, centerZ;
-        private final int radius;
-        private final int minY, maxY;
-        private final int weight;
-        private final String displayName;
-        private final Map<String, Object> extraData;
-
-        public EventLocationConfig(String id, String worldName, int centerX, int centerY, int centerZ,
-                                   int radius, int minY, int maxY, int weight, String displayName,
-                                   Map<String, Object> extraData) {
-            this.id = id;
-            this.worldName = worldName;
-            this.centerX = centerX;
-            this.centerY = centerY;
-            this.centerZ = centerZ;
-            this.radius = radius;
-            this.minY = minY;
-            this.maxY = maxY;
-            this.weight = weight;
-            this.displayName = displayName != null ? displayName : id;
-            this.extraData = extraData != null ? new HashMap<>(extraData) : new HashMap<>();
-        }
-
-        public static EventLocationConfig fromConfig(String id, ConfigurationSection section) {
-            String worldName = section.getString("world", "world");
-
-            // Support pour center ou coordonnées directes
-            ConfigurationSection centerSection = section.getConfigurationSection("center");
-            int centerX, centerY, centerZ;
-
-            if (centerSection != null) {
-                centerX = centerSection.getInt("x", 0);
-                centerY = centerSection.getInt("y", 64);
-                centerZ = centerSection.getInt("z", 0);
-            } else {
-                centerX = section.getInt("x", 0);
-                centerY = section.getInt("y", 64);
-                centerZ = section.getInt("z", 0);
+    public record EventLocationConfig(String id, String worldName, int centerX, int centerY, int centerZ, int radius,
+                                      int minY, int maxY, int weight, String displayName,
+                                      Map<String, Object> extraData) {
+            public EventLocationConfig(String id, String worldName, int centerX, int centerY, int centerZ,
+                                       int radius, int minY, int maxY, int weight, String displayName,
+                                       Map<String, Object> extraData) {
+                this.id = id;
+                this.worldName = worldName;
+                this.centerX = centerX;
+                this.centerY = centerY;
+                this.centerZ = centerZ;
+                this.radius = radius;
+                this.minY = minY;
+                this.maxY = maxY;
+                this.weight = weight;
+                this.displayName = displayName != null ? displayName : id;
+                this.extraData = extraData != null ? new HashMap<>(extraData) : new HashMap<>();
             }
 
-            int radius = section.getInt("radius", 10);
-            int minY = section.getInt("min-y", centerY - 5);
-            int maxY = section.getInt("max-y", centerY + 5);
-            int weight = section.getInt("weight", 1);
-            String displayName = section.getString("display-name", id);
+            public static EventLocationConfig fromConfig(String id, ConfigurationSection section) {
+                String worldName = section.getString("world", "world");
 
-            Map<String, Object> extraData = new HashMap<>();
-            for (String key : section.getKeys(false)) {
-                if (!Arrays.asList("world", "center", "x", "y", "z", "radius", "min-y", "max-y",
-                        "weight", "display-name").contains(key)) {
-                    extraData.put(key, section.get(key));
+                // Support pour center ou coordonnées directes
+                ConfigurationSection centerSection = section.getConfigurationSection("center");
+                int centerX, centerY, centerZ;
+
+                if (centerSection != null) {
+                    centerX = centerSection.getInt("x", 0);
+                    centerY = centerSection.getInt("y", 64);
+                    centerZ = centerSection.getInt("z", 0);
+                } else {
+                    centerX = section.getInt("x", 0);
+                    centerY = section.getInt("y", 64);
+                    centerZ = section.getInt("z", 0);
                 }
+
+                int radius = section.getInt("radius", 10);
+                int minY = section.getInt("min-y", centerY - 5);
+                int maxY = section.getInt("max-y", centerY + 5);
+                int weight = section.getInt("weight", 1);
+                String displayName = section.getString("display-name", id);
+
+                Map<String, Object> extraData = new HashMap<>();
+                for (String key : section.getKeys(false)) {
+                    if (!Arrays.asList("world", "center", "x", "y", "z", "radius", "min-y", "max-y",
+                            "weight", "display-name").contains(key)) {
+                        extraData.put(key, section.get(key));
+                    }
+                }
+
+                return new EventLocationConfig(id, worldName, centerX, centerY, centerZ, radius,
+                        minY, maxY, weight, displayName, extraData);
             }
 
-            return new EventLocationConfig(id, worldName, centerX, centerY, centerZ, radius,
-                    minY, maxY, weight, displayName, extraData);
+            public static EventLocationConfig fromMap(String id, Map<?, ?> map) {
+                Object worldObj = map.get("world");
+                String worldName = worldObj instanceof String ? (String) worldObj : "world";
+
+                Object xObj = map.get("x");
+                int centerX = xObj instanceof Number ? ((Number) xObj).intValue() : 0;
+
+                Object yObj = map.get("y");
+                int centerY = yObj instanceof Number ? ((Number) yObj).intValue() : 70;
+
+                Object zObj = map.get("z");
+                int centerZ = zObj instanceof Number ? ((Number) zObj).intValue() : 0;
+
+                Object radiusObj = map.get("radius");
+                int radius = radiusObj instanceof Number ? ((Number) radiusObj).intValue() : 10;
+
+                Object weightObj = map.get("weight");
+                int weight = weightObj instanceof Number ? ((Number) weightObj).intValue() : 1;
+
+                return new EventLocationConfig(id, worldName, centerX, centerY, centerZ,
+                        radius, centerY - 5, centerY + 5, weight, id, null);
+            }
+
+            public Location getRandomLocation(CustomMobsPlugin plugin) {
+                World world = Bukkit.getWorld(worldName);
+                if (world == null) {
+                    plugin.getLogger().warning("Monde '" + worldName + "' non trouvé pour la zone " + id);
+                    return null;
+                }
+
+                if (radius <= 0) {
+                    return new Location(world, centerX, centerY, centerZ);
+                }
+
+                double angle = ThreadLocalRandom.current().nextDouble() * 2 * Math.PI;
+                double distance = ThreadLocalRandom.current().nextDouble() * radius;
+
+                int x = centerX + (int) (Math.cos(angle) * distance);
+                int z = centerZ + (int) (Math.sin(angle) * distance);
+                int y = minY + ThreadLocalRandom.current().nextInt(maxY - minY + 1);
+
+                return new Location(world, x, y, z);
+            }
+
+            public boolean isWorldAvailable() {
+                return Bukkit.getWorld(worldName) != null;
+            }
+
+        @Override
+        public Map<String, Object> extraData() {
+            return new HashMap<>(extraData);
         }
 
-        public static EventLocationConfig fromMap(String id, Map<?, ?> map) {
-            Object worldObj = map.get("world");
-            String worldName = worldObj instanceof String ? (String) worldObj : "world";
-
-            Object xObj = map.get("x");
-            int centerX = xObj instanceof Number ? ((Number) xObj).intValue() : 0;
-
-            Object yObj = map.get("y");
-            int centerY = yObj instanceof Number ? ((Number) yObj).intValue() : 70;
-
-            Object zObj = map.get("z");
-            int centerZ = zObj instanceof Number ? ((Number) zObj).intValue() : 0;
-
-            Object radiusObj = map.get("radius");
-            int radius = radiusObj instanceof Number ? ((Number) radiusObj).intValue() : 10;
-
-            Object weightObj = map.get("weight");
-            int weight = weightObj instanceof Number ? ((Number) weightObj).intValue() : 1;
-
-            return new EventLocationConfig(id, worldName, centerX, centerY, centerZ,
-                    radius, centerY - 5, centerY + 5, weight, id, null);
-        }
-
-        public Location getRandomLocation(CustomMobsPlugin plugin) {
-            World world = Bukkit.getWorld(worldName);
-            if (world == null) {
-                plugin.getLogger().warning("Monde '" + worldName + "' non trouvé pour la zone " + id);
+            public Location getCenterLocation(CustomMobsPlugin plugin) {
                 return null;
             }
-
-            if (radius <= 0) {
-                return new Location(world, centerX, centerY, centerZ);
-            }
-
-            double angle = ThreadLocalRandom.current().nextDouble() * 2 * Math.PI;
-            double distance = ThreadLocalRandom.current().nextDouble() * radius;
-
-            int x = centerX + (int) (Math.cos(angle) * distance);
-            int z = centerZ + (int) (Math.sin(angle) * distance);
-            int y = minY + ThreadLocalRandom.current().nextInt(maxY - minY + 1);
-
-            return new Location(world, x, y, z);
         }
 
-        public boolean isWorldAvailable() {
-            return Bukkit.getWorld(worldName) != null;
-        }
-
-        // Getters
-        public String getId() { return id; }
-        public String getWorldName() { return worldName; }
-        public int getCenterX() { return centerX; }
-        public int getCenterY() { return centerY; }
-        public int getCenterZ() { return centerZ; }
-        public int getRadius() { return radius; }
-        public int getMinY() { return minY; }
-        public int getMaxY() { return maxY; }
-        public int getWeight() { return weight; }
-        public String getDisplayName() { return displayName; }
-        public Map<String, Object> getExtraData() { return new HashMap<>(extraData); }
-
-        public Location getCenterLocation(CustomMobsPlugin plugin) {
-            return null;
-        }
-    }
-
-    public static class EventMobConfig {
-        private final String id;
-        private final int weight;
-        private final int groupSize;
-        private final Map<String, Object> extraData;
-
-        public EventMobConfig(String id, int weight, int groupSize, Map<String, Object> extraData) {
-            this.id = id;
-            this.weight = weight;
-            this.groupSize = groupSize;
-            this.extraData = extraData != null ? new HashMap<>(extraData) : new HashMap<>();
-        }
-
-        public static EventMobConfig fromConfig(String id, ConfigurationSection section) {
-            String name = section.getString("name", id);
-            int weight = section.getInt("weight", 1);
-            int groupSize = section.getInt("group-size", 1);
-
-            Map<String, Object> extraData = new HashMap<>();
-            extraData.put("name", name);
-
-            // Données spécifiques aux brèches
-            if (section.contains("spawn-weight")) {
-                extraData.put("spawn-weight", section.getInt("spawn-weight"));
-            }
-            if (section.contains("health-multiplier")) {
-                extraData.put("health-multiplier", section.getDouble("health-multiplier"));
-            }
-            if (section.contains("damage-multiplier")) {
-                extraData.put("damage-multiplier", section.getDouble("damage-multiplier"));
+    public record EventMobConfig(String id, int weight, int groupSize, Map<String, Object> extraData) {
+            public EventMobConfig(String id, int weight, int groupSize, Map<String, Object> extraData) {
+                this.id = id;
+                this.weight = weight;
+                this.groupSize = groupSize;
+                this.extraData = extraData != null ? new HashMap<>(extraData) : new HashMap<>();
             }
 
-            // Autres données
-            for (String key : section.getKeys(false)) {
-                if (!Arrays.asList("name", "weight", "group-size", "spawn-weight",
-                        "health-multiplier", "damage-multiplier").contains(key)) {
-                    extraData.put(key, section.get(key));
+            public static EventMobConfig fromConfig(String id, ConfigurationSection section) {
+                String name = section.getString("name", id);
+                int weight = section.getInt("weight", 1);
+                int groupSize = section.getInt("group-size", 1);
+
+                Map<String, Object> extraData = new HashMap<>();
+                extraData.put("name", name);
+
+                // Données spécifiques aux brèches
+                if (section.contains("spawn-weight")) {
+                    extraData.put("spawn-weight", section.getInt("spawn-weight"));
                 }
+                if (section.contains("health-multiplier")) {
+                    extraData.put("health-multiplier", section.getDouble("health-multiplier"));
+                }
+                if (section.contains("damage-multiplier")) {
+                    extraData.put("damage-multiplier", section.getDouble("damage-multiplier"));
+                }
+
+                // Autres données
+                for (String key : section.getKeys(false)) {
+                    if (!Arrays.asList("name", "weight", "group-size", "spawn-weight",
+                            "health-multiplier", "damage-multiplier").contains(key)) {
+                        extraData.put(key, section.get(key));
+                    }
+                }
+
+                return new EventMobConfig(id, weight, groupSize, extraData);
             }
 
-            return new EventMobConfig(id, weight, groupSize, extraData);
+        @Override
+        public Map<String, Object> extraData() {
+            return new HashMap<>(extraData);
         }
 
-        // Getters
-        public String getId() { return id; }
-        public int getWeight() { return weight; }
-        public int getGroupSize() { return groupSize; }
-        public Map<String, Object> getExtraData() { return new HashMap<>(extraData); }
-        public int getSpawnWeight() { return (int) extraData.getOrDefault("spawn-weight", weight); }
-        public String getName() { return (String) extraData.getOrDefault("name", id); }
-        public double getHealthMultiplier() { return (double) extraData.getOrDefault("health-multiplier", 1.0); }
-        public double getDamageMultiplier() { return (double) extraData.getOrDefault("damage-multiplier", 1.0); }
-    }
-
-    public static class EventRewardConfig {
-        private final String eventId;
-        private final Map<String, Integer> rewards;
-        private final Map<String, Map<String, Integer>> tieredRewards;
-
-        public EventRewardConfig(String eventId, Map<String, Integer> rewards,
-                                 Map<String, Map<String, Integer>> tieredRewards) {
-            this.eventId = eventId;
-            this.rewards = new HashMap<>(rewards);
-            this.tieredRewards = new HashMap<>(tieredRewards);
+        public int getSpawnWeight() {
+            return (int) extraData.getOrDefault("spawn-weight", weight);
         }
 
-        public static EventRewardConfig fromConfig(String eventId, ConfigurationSection section) {
-            Map<String, Integer> rewards = new HashMap<>();
-            Map<String, Map<String, Integer>> tieredRewards = new HashMap<>();
+        public String getName() {
+            return (String) extraData.getOrDefault("name", id);
+        }
 
-            for (String key : section.getKeys(false)) {
-                if (section.isConfigurationSection(key)) {
-                    ConfigurationSection tierSection = section.getConfigurationSection(key);
-                    Map<String, Integer> tierMap = new HashMap<>();
-                    if (tierSection != null) {
-                        for (String tierKey : tierSection.getKeys(false)) {
-                            if (tierSection.isInt(tierKey)) {
-                                tierMap.put(tierKey, tierSection.getInt(tierKey));
+        public double getHealthMultiplier() {
+            return (double) extraData.getOrDefault("health-multiplier", 1.0);
+        }
+
+        public double getDamageMultiplier() {
+            return (double) extraData.getOrDefault("damage-multiplier", 1.0);
+        }
+        }
+
+    public record EventRewardConfig(String eventId, Map<String, Integer> rewards,
+                                    Map<String, Map<String, Integer>> tieredRewards) {
+            public EventRewardConfig(String eventId, Map<String, Integer> rewards,
+                                     Map<String, Map<String, Integer>> tieredRewards) {
+                this.eventId = eventId;
+                this.rewards = new HashMap<>(rewards);
+                this.tieredRewards = new HashMap<>(tieredRewards);
+            }
+
+            public static EventRewardConfig fromConfig(String eventId, ConfigurationSection section) {
+                Map<String, Integer> rewards = new HashMap<>();
+                Map<String, Map<String, Integer>> tieredRewards = new HashMap<>();
+
+                for (String key : section.getKeys(false)) {
+                    if (section.isConfigurationSection(key)) {
+                        ConfigurationSection tierSection = section.getConfigurationSection(key);
+                        Map<String, Integer> tierMap = new HashMap<>();
+                        if (tierSection != null) {
+                            for (String tierKey : tierSection.getKeys(false)) {
+                                if (tierSection.isInt(tierKey)) {
+                                    tierMap.put(tierKey, tierSection.getInt(tierKey));
+                                }
                             }
                         }
+                        tieredRewards.put(key, tierMap);
+                    } else if (section.isInt(key)) {
+                        rewards.put(key, section.getInt(key));
                     }
-                    tieredRewards.put(key, tierMap);
-                } else if (section.isInt(key)) {
-                    rewards.put(key, section.getInt(key));
                 }
+
+                return new EventRewardConfig(eventId, rewards, tieredRewards);
             }
 
-            return new EventRewardConfig(eventId, rewards, tieredRewards);
+        @Override
+        public Map<String, Integer> rewards() {
+            return new HashMap<>(rewards);
         }
 
-        // Getters
-        public String getEventId() { return eventId; }
-        public Map<String, Integer> getRewards() { return new HashMap<>(rewards); }
-        public Map<String, Map<String, Integer>> getTieredRewards() { return new HashMap<>(tieredRewards); }
-
-        public int getReward(String key) { return rewards.getOrDefault(key, 0); }
-
-        public Map<String, Integer> getTierRewards(String tier) {
-            return tieredRewards.getOrDefault(tier, new HashMap<>());
+        @Override
+        public Map<String, Map<String, Integer>> tieredRewards() {
+            return new HashMap<>(tieredRewards);
         }
 
-        public int getTierReward(String tier, String key) {
-            Map<String, Integer> tierMap = tieredRewards.get(tier);
-            return tierMap != null ? tierMap.getOrDefault(key, 0) : 0;
-        }
+            public int getReward(String key) {
+                return rewards.getOrDefault(key, 0);
+            }
 
-        public int getTieredReward(String s, String s1) {
-            return 0;
+            public Map<String, Integer> getTierRewards(String tier) {
+                return tieredRewards.getOrDefault(tier, new HashMap<>());
+            }
+
+            public int getTierReward(String tier, String key) {
+                Map<String, Integer> tierMap = tieredRewards.get(tier);
+                return tierMap != null ? tierMap.getOrDefault(key, 0) : 0;
+            }
+
+            public int getTieredReward(String s, String s1) {
+                return 0;
+            }
         }
-    }
 }

@@ -56,24 +56,24 @@ public class EventScheduler {
         scheduledEvents.clear();
 
         for (EventConfigManager.EventScheduleConfig scheduleConfig : configManager.getAllEventSchedules().values()) {
-            if (!scheduleConfig.isEnabled()) {
-                plugin.getLogger().info("§7Événement désactivé: " + scheduleConfig.getId());
+            if (!scheduleConfig.enabled()) {
+                plugin.getLogger().info("§7Événement désactivé: " + scheduleConfig.id());
                 continue;
             }
 
             ScheduledEvent scheduledEvent = new ScheduledEvent(
-                    scheduleConfig.getId(),
-                    scheduleConfig.getName(),
-                    scheduleConfig.getDays(),
-                    scheduleConfig.getTime().getHour(),
-                    scheduleConfig.getTime().getMinute(),
-                    scheduleConfig.getDuration(),
-                    () -> createEventInstance(scheduleConfig.getId())
+                    scheduleConfig.id(),
+                    scheduleConfig.name(),
+                    scheduleConfig.days(),
+                    scheduleConfig.time().getHour(),
+                    scheduleConfig.time().getMinute(),
+                    scheduleConfig.duration(),
+                    () -> createEventInstance(scheduleConfig.id())
             );
 
-            scheduledEvents.put(scheduleConfig.getId(), scheduledEvent);
-            plugin.getLogger().info("§aÉvénement programmé: " + scheduleConfig.getName() +
-                    " (" + scheduleConfig.getId() + ")");
+            scheduledEvents.put(scheduleConfig.id(), scheduledEvent);
+            plugin.getLogger().info("§aÉvénement programmé: " + scheduleConfig.name() +
+                    " (" + scheduleConfig.id() + ")");
         }
 
         plugin.getLogger().info("§a" + scheduledEvents.size() + " événements programmés initialisés depuis la config!");

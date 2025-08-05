@@ -191,7 +191,7 @@ public class NecromancerDark extends CustomMob {
         isCasting = true;
         lastShadowPact = System.currentTimeMillis();
 
-        Vex sacrifice = summonedVexes.get(0);
+        Vex sacrifice = summonedVexes.getFirst();
         Location destination = sacrifice.getLocation();
 
         entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1.2f, 0.5f);

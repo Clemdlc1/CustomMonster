@@ -24,12 +24,10 @@ public class SpawnMobCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!(sender instanceof Player)) {
+        if (!(sender instanceof Player player)) {
             sender.sendMessage(ChatColor.RED + "Cette commande ne peut être utilisée que par un joueur!");
             return true;
         }
-
-        Player player = (Player) sender;
 
         if (args.length == 0) {
             sendUsage(player);
@@ -93,8 +91,7 @@ public class SpawnMobCommand implements CommandExecutor, TabCompleter {
 
         if (args.length == 1) {
             completions.addAll(plugin.getMobManager().getRegisteredMobIds());
-        } else if (args.length >= 2 && args.length <= 4 && sender instanceof Player) {
-            Player player = (Player) sender;
+        } else if (args.length >= 2 && args.length <= 4 && sender instanceof Player player) {
             Location loc = player.getLocation();
 
             switch (args.length) {

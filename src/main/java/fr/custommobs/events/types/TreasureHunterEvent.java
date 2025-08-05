@@ -15,7 +15,6 @@ import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
-import org.bukkit.util.Vector;
 
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
@@ -85,14 +84,14 @@ public class TreasureHunterEvent extends ServerEvent {
         selectedMineZone = mineZones.get(ThreadLocalRandom.current().nextInt(mineZones.size()));
 
         // Créer le centre à partir des coordonnées
-        World world = Bukkit.getWorld(selectedMineZone.getWorldName());
+        World world = Bukkit.getWorld(selectedMineZone.worldName());
         if (world == null) {
-            plugin.getLogger().severe("§c§l[CHASSEUR] Monde " + selectedMineZone.getWorldName() + " introuvable! Événement annulé.");
+            plugin.getLogger().severe("§c§l[CHASSEUR] Monde " + selectedMineZone.worldName() + " introuvable! Événement annulé.");
             forceEnd();
             return;
         }
 
-        mineCenter = new Location(world, selectedMineZone.getCenterX(), selectedMineZone.getCenterY(), selectedMineZone.getCenterZ());
+        mineCenter = new Location(world, selectedMineZone.centerX(), selectedMineZone.centerY(), selectedMineZone.centerZ());
         eventWorld = world;
 
         if (eventWorld == null) {
@@ -117,7 +116,7 @@ public class TreasureHunterEvent extends ServerEvent {
         // Annonce spectaculaire
         announceTreasureHunt();
 
-        plugin.getLogger().info("§6§l[CHASSEUR] Événement démarré dans la zone: " + selectedMineZone.getDisplayName());
+        plugin.getLogger().info("§6§l[CHASSEUR] Événement démarré dans la zone: " + selectedMineZone.displayName());
         plugin.getLogger().info("§6§l[CHASSEUR] Lutin spawné à: " + lutinSpawnPoint);
     }
 
@@ -203,12 +202,12 @@ public class TreasureHunterEvent extends ServerEvent {
         for (int attempt = 0; attempt < 15; attempt++) {
             // Utiliser le système de coordonnées centrées avec rayon
             double angle = ThreadLocalRandom.current().nextDouble() * 2 * Math.PI;
-            double distance = ThreadLocalRandom.current().nextDouble() * selectedMineZone.getRadius();
+            double distance = ThreadLocalRandom.current().nextDouble() * selectedMineZone.radius();
 
-            double x = selectedMineZone.getCenterX() + Math.cos(angle) * distance;
-            double z = selectedMineZone.getCenterZ() + Math.sin(angle) * distance;
-            double y = selectedMineZone.getMinY() + ThreadLocalRandom.current().nextDouble() *
-                    (selectedMineZone.getMaxY() - selectedMineZone.getMinY());
+            double x = selectedMineZone.centerX() + Math.cos(angle) * distance;
+            double z = selectedMineZone.centerZ() + Math.sin(angle) * distance;
+            double y = selectedMineZone.minY() + ThreadLocalRandom.current().nextDouble() *
+                    (selectedMineZone.maxY() - selectedMineZone.minY());
 
             Location testLoc = new Location(eventWorld, x, y, z);
 
@@ -236,7 +235,7 @@ public class TreasureHunterEvent extends ServerEvent {
                 "§6§l║ §f de la mine avec un trésor précieux ! §6§l║",
                 "§6§l║                                      §6§l║",
                 "§6§l║ §a§l➤ §f§lObjectif: §c§lTraquez et capturez-le §6§l║",
-                "§6§l║ §a§l➤ §f§lZone: §e" + selectedMineZone.getDisplayName() + "            §6§l║",
+                "§6§l║ §a§l➤ §f§lZone: §e" + selectedMineZone.displayName() + "            §6§l║",
                 "§6§l║ §a§l➤ §f§lDurée: §c§l15 minutes              §6§l║",
                 "§6§l║                                      §6§l║",
                 "§6§l║ §c§l⚡ Plus votre réputation est négative, §6§l║",

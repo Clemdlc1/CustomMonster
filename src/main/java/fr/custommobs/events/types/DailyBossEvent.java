@@ -39,12 +39,12 @@ public class DailyBossEvent extends ServerEvent {
                           EventListener.EventRewardsManager rewardsManager, EventConfigManager configManager,
                           BossStatsManager bossStatsManager) {
         super(plugin, prisonHook, rewardsManager, "daily_boss", "Boss Quotidien",
-                EventType.COOPERATIVE, configManager.getEventSchedule("daily_boss").getDuration());
+                EventType.COOPERATIVE, configManager.getEventSchedule("daily_boss").duration());
 
         this.configManager = configManager;
         this.bossStatsManager = bossStatsManager;
         // <-- SOLUTION PART 2: Initialize the duration field
-        this.duration = configManager.getEventSchedule("daily_boss").getDuration();
+        this.duration = configManager.getEventSchedule("daily_boss").duration();
     }
 
     @Override
@@ -74,7 +74,7 @@ public class DailyBossEvent extends ServerEvent {
 
         // Annonce de l'événement avec le nom du boss et de l'arène
         Bukkit.broadcastMessage("§0§l💀 BOSS QUOTIDIEN APPARAÎT ! 💀");
-      Bukkit.broadcastMessage("§7§lRendez-vous en §e" + selectedArena.getDisplayName());
+      Bukkit.broadcastMessage("§7§lRendez-vous en §e" + selectedArena.displayName());
         Bukkit.broadcastMessage("§7§lPréparation: §c60 secondes");
 
         // Effets de préparation dans l'arène
@@ -112,7 +112,7 @@ public class DailyBossEvent extends ServerEvent {
         }
 
         // Sélection pondérée
-        int totalWeight = bosses.stream().mapToInt(EventConfigManager.EventMobConfig::getWeight).sum();
+        int totalWeight = bosses.stream().mapToInt(EventConfigManager.EventMobConfig::weight).sum();
         if (totalWeight <= 0) {
             return bosses.get(ThreadLocalRandom.current().nextInt(bosses.size()));
         }
@@ -120,13 +120,13 @@ public class DailyBossEvent extends ServerEvent {
 
         int currentWeight = 0;
         for (EventConfigManager.EventMobConfig bossConfig : bosses) {
-            currentWeight += bossConfig.getWeight();
+            currentWeight += bossConfig.weight();
             if (randomWeight < currentWeight) {
                 return bossConfig;
             }
         }
 
-        return bosses.get(0); // Fallback
+        return bosses.getFirst(); // Fallback
     }
 
     /**
@@ -206,7 +206,7 @@ public class DailyBossEvent extends ServerEvent {
     private void spawnBoss() {
         try {
             // Spawner le boss customisé
-            boss = plugin.getMobManager().spawnCustomMob(selectedBossConfig.getId(), bossLocation);
+            boss = plugin.getMobManager().spawnCustomMob(selectedBossConfig.id(), bossLocation);
 
             if (boss != null) {
                 // Métadonnées pour l'identification
@@ -225,13 +225,13 @@ public class DailyBossEvent extends ServerEvent {
 
                 // Démarrer le tracking des statistiques avec BossStatsManager
                 if (bossStatsManager != null) {
-                    bossStatsManager.startBossFight(boss, selectedBossConfig.getId());
-                    plugin.getLogger().info("§a[BOSS EVENT] Tracking des statistiques démarré pour: " + selectedBossConfig.getId());
+                    bossStatsManager.startBossFight(boss, selectedBossConfig.id());
+                    plugin.getLogger().info("§a[BOSS EVENT] Tracking des statistiques démarré pour: " + selectedBossConfig.id());
                 }
 
                 // Annonces
                 Bukkit.broadcastMessage("§0§l[BOSS] §8" + " §8§lest apparu !");
-                Bukkit.broadcastMessage("§7§lLocalisation: §e" + selectedArena.getDisplayName());
+                Bukkit.broadcastMessage("§7§lLocalisation: §e" + selectedArena.displayName());
 
                 // Effets dramatiques
                 for (Player player : Bukkit.getOnlinePlayers()) {
@@ -244,7 +244,7 @@ public class DailyBossEvent extends ServerEvent {
                 }
 
             } else {
-                plugin.getLogger().severe("§cÉchec du spawn du boss: " + selectedBossConfig.getId());
+                plugin.getLogger().severe("§cÉchec du spawn du boss: " + selectedBossConfig.id());
                 forceEnd();
             }
         } catch (Exception e) {
@@ -305,9 +305,7 @@ public class DailyBossEvent extends ServerEvent {
         int filledBars = (int) (healthPercent / 100 * barLength);
 
         StringBuilder healthBar = new StringBuilder();
-        for (int i = 0; i < barLength; i++) {
-            healthBar.append("█");
-        }
+        healthBar.append("█".repeat(barLength));
 
         // Couleur selon le pourcentage de vie
         String healthColor;
@@ -489,7 +487,7 @@ public class DailyBossEvent extends ServerEvent {
     }
 
     public String getArenaDisplayName() {
-        return selectedArena != null ? selectedArena.getDisplayName() : "Arène Inconnue";
+        return selectedArena != null ? selectedArena.displayName() : "Arène Inconnue";
     }
 
     public boolean isBossSpawned() {

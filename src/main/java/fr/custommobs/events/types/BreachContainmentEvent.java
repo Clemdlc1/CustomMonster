@@ -101,7 +101,7 @@ public class BreachContainmentEvent extends ServerEvent {
         // Annonces serveur
         Bukkit.broadcastMessage("");
         Bukkit.broadcastMessage("§5§l🌀 ALERTE CRITIQUE - BRÈCHE DIMENSIONNELLE ! 🌀");
-        Bukkit.broadcastMessage("§d§lRupture dimensionnelle détectée en §f" + selectedZone.getDisplayName());
+        Bukkit.broadcastMessage("§d§lRupture dimensionnelle détectée en §f" + selectedZone.displayName());
         Bukkit.broadcastMessage("§7§lDes créatures tentent de traverser la barrière !");
         Bukkit.broadcastMessage("§c§lÉvénement coopératif - Unissez-vous pour survivre !");
         Bukkit.broadcastMessage("§7§l5 vagues à affronter - 20 minutes pour tout contenir");
@@ -479,8 +479,8 @@ public class BreachContainmentEvent extends ServerEvent {
         // Vérifier que les monstres sont bien enregistrés dans le plugin
         plugin.getLogger().info("§5[BRÈCHE] Monstres disponibles: " + possibleMobs.size());
         for (EventConfigManager.EventMobConfig mobConfig : possibleMobs) {
-            boolean isRegistered = plugin.getMobManager().isMobRegistered(mobConfig.getId());
-            plugin.getLogger().info("§5[BRÈCHE] - " + mobConfig.getId() +
+            boolean isRegistered = plugin.getMobManager().isMobRegistered(mobConfig.id());
+            plugin.getLogger().info("§5[BRÈCHE] - " + mobConfig.id() +
                     " (enregistré: " + isRegistered +
                     ", poids: " + mobConfig.getSpawnWeight() +
                     ", nom: " + mobConfig.getName() + ")");
@@ -494,8 +494,8 @@ public class BreachContainmentEvent extends ServerEvent {
             }
 
             // Vérifier que le monstre est bien enregistré dans le plugin
-            if (!plugin.getMobManager().isMobRegistered(selectedMob.getId())) {
-                plugin.getLogger().warning("§5[BRÈCHE] ATTENTION: Monstre '" + selectedMob.getId() +
+            if (!plugin.getMobManager().isMobRegistered(selectedMob.id())) {
+                plugin.getLogger().warning("§5[BRÈCHE] ATTENTION: Monstre '" + selectedMob.id() +
                         "' non enregistré dans CustomMobManager!");
                 continue;
             }
@@ -506,7 +506,7 @@ public class BreachContainmentEvent extends ServerEvent {
             if (validSpawnLocation != null) {
                 try {
                     // Utiliser le CustomMobManager pour spawner les monstres custom
-                    LivingEntity mob = plugin.getMobManager().spawnCustomMob(selectedMob.getId(), validSpawnLocation);
+                    LivingEntity mob = plugin.getMobManager().spawnCustomMob(selectedMob.id(), validSpawnLocation);
 
                     if (mob != null) {
                         setupMob(mob);
@@ -514,21 +514,21 @@ public class BreachContainmentEvent extends ServerEvent {
                         allSpawnedMobs.add(mob);
                         successfulSpawns++;
 
-                        plugin.getLogger().info("§5[BRÈCHE] ✅ Monstre CUSTOM " + selectedMob.getId() +
+                        plugin.getLogger().info("§5[BRÈCHE] ✅ Monstre CUSTOM " + selectedMob.id() +
                                 " (" + mob.getClass().getSimpleName() + ") spawné à " +
                                 validSpawnLocation.getBlockX() + "," +
                                 validSpawnLocation.getBlockY() + "," +
                                 validSpawnLocation.getBlockZ());
                     } else {
-                        plugin.getLogger().warning("§5[BRÈCHE] ❌ Échec spawn CustomMob: " + selectedMob.getId() +
+                        plugin.getLogger().warning("§5[BRÈCHE] ❌ Échec spawn CustomMob: " + selectedMob.id() +
                                 " (getMobManager().spawnCustomMob retourné null)");
                     }
                 } catch (Exception e) {
-                    plugin.getLogger().warning("§5[BRÈCHE] ❌ Erreur spawn monstre custom " + selectedMob.getId() + ": " + e.getMessage());
+                    plugin.getLogger().warning("§5[BRÈCHE] ❌ Erreur spawn monstre custom " + selectedMob.id() + ": " + e.getMessage());
                     e.printStackTrace();
                 }
             } else {
-                plugin.getLogger().warning("§5[BRÈCHE] ❌ Impossible de trouver un emplacement valide pour " + selectedMob.getId());
+                plugin.getLogger().warning("§5[BRÈCHE] ❌ Impossible de trouver un emplacement valide pour " + selectedMob.id());
             }
         }
 
@@ -815,7 +815,7 @@ public class BreachContainmentEvent extends ServerEvent {
             }
         }
 
-        return mobs.get(0); // Fallback
+        return mobs.getFirst(); // Fallback
     }
 
     /**

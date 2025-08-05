@@ -98,15 +98,15 @@ public class LutinTreasure extends CustomMob {
 
     @Override
     public LivingEntity spawn(Location location) {
-        // Utilise un Zombie Villager pour l'apparence
-        ZombieVillager lutin = location.getWorld().spawn(location, ZombieVillager.class);
-
+        // Utilise un Zombie pour l'apparence
+        Zombie lutin = location.getWorld().spawn(location, Zombie.class);
+        lutin.setBaby(true);
         // Équipement riche et scintillant
-        lutin.getEquipment().setItemInMainHand(createTreasureItem(Material.EMERALD, "§a§lÉmeraudes Précieuses", 8));
-        lutin.getEquipment().setItemInOffHand(createTreasureItem(Material.GOLD_INGOT, "§6§lLingots Dorés", 5));
+        lutin.getEquipment().setItemInMainHand(createTreasureItem(Material.GOLD_BLOCK, "§a§lÉmeraudes Précieuses", 8));
+        lutin.getEquipment().setItemInOffHand(createTreasureItem(Material.GOLD_BLOCK, "§6§lLingots Dorés", 5));
         lutin.getEquipment().setHelmet(createTreasureItem(Material.GOLDEN_HELMET, "§6§lCouronne de Fortune", 1));
-        lutin.getEquipment().setChestplate(createTreasureItem(Material.LEATHER_CHESTPLATE, "§2§lTunique d'Aventurier", 1));
-        lutin.getEquipment().setLeggings(createTreasureItem(Material.CHAINMAIL_LEGGINGS, "§7§lJambières Renforcées", 1));
+        lutin.getEquipment().setChestplate(createTreasureItem(Material.GOLDEN_CHESTPLATE, "§2§lTunique d'Aventurier", 1));
+        lutin.getEquipment().setLeggings(createTreasureItem(Material.GOLDEN_LEGGINGS, "§7§lJambières Renforcées", 1));
         lutin.getEquipment().setBoots(createTreasureItem(Material.GOLDEN_BOOTS, "§6§lBottes de Vitesse", 1));
 
         // Configuration des drops d'équipement
@@ -498,7 +498,7 @@ public class LutinTreasure extends CustomMob {
      * Crée une illusion avancée avec comportement
      */
     private void createAdvancedIllusion(Location location, int index) {
-        ZombieVillager illusion = location.getWorld().spawn(location, ZombieVillager.class);
+        Zombie illusion = location.getWorld().spawn(location, Zombie.class);
 
         // Copie l'apparence exacte
         copyAppearanceToIllusion(illusion);
@@ -538,7 +538,7 @@ public class LutinTreasure extends CustomMob {
     /**
      * Donne un comportement réaliste aux illusions
      */
-    private void startIllusionBehavior(ZombieVillager illusion) {
+    private void startIllusionBehavior(Zombie illusion) {
         new BukkitRunnable() {
             int ticks = 0;
             @Override
@@ -745,7 +745,7 @@ public class LutinTreasure extends CustomMob {
     /**
      * Met à jour les effets de phase
      */
-    private void updatePhaseEffects(ZombieVillager lutin) {
+    private void updatePhaseEffects(Zombie lutin) {
         // Retire les anciens effets
         lutin.removePotionEffect(PotionEffectType.SPEED);
         lutin.removePotionEffect(PotionEffectType.JUMP_BOOST);
@@ -822,8 +822,8 @@ public class LutinTreasure extends CustomMob {
         entity.setCustomName(newPhase.getDisplayName());
 
         // Met à jour les effets
-        if (entity instanceof ZombieVillager) {
-            updatePhaseEffects((ZombieVillager) entity);
+        if (entity instanceof Zombie) {
+            updatePhaseEffects((Zombie) entity);
         }
 
         // Annonce le changement
@@ -1222,8 +1222,8 @@ public class LutinTreasure extends CustomMob {
         cleanupGuardians();
     }
 
-    private void copyAppearanceToIllusion(ZombieVillager illusion) {
-        if (entity instanceof ZombieVillager original) {
+    private void copyAppearanceToIllusion(Zombie illusion) {
+        if (entity instanceof Zombie original) {
             illusion.getEquipment().setItemInMainHand(original.getEquipment().getItemInMainHand());
             illusion.getEquipment().setItemInOffHand(original.getEquipment().getItemInOffHand());
             illusion.getEquipment().setHelmet(original.getEquipment().getHelmet());

@@ -177,12 +177,7 @@ public class GangWarEvent extends ServerEvent {
         int basePoints = configManager.getEventsConfig()
                 .getInt("advanced-settings.gang_war.scoring.monster_kill", 10);
 
-        // Bonus si c'est un mob custom
-        if (CustomMob.isCustomMob(monster)) {
-            basePoints *= 1.5; // 50% de bonus pour les mobs customs
-        }
-
-        addPointsToPlayer(killer, killerGang, basePoints, "kill de monstre");
+        addPointsToPlayer(killer, killerGang, basePoints);
 
         // Stats
         GangWarStats stats = playerStats.get(killer.getUniqueId());
@@ -222,7 +217,7 @@ public class GangWarEvent extends ServerEvent {
         if (killerGang.equals(victimGang)) {
             int penalty = configManager.getEventsConfig()
                     .getInt("advanced-settings.gang_war.restrictions.friendly_fire_penalty", -25);
-            addPointsToPlayer(killer, killerGang, penalty, "friendly fire");
+            addPointsToPlayer(killer, killerGang, penalty);
 
             killer.sendMessage("§c§l[GANG_WAR] §cPénalité pour friendly fire: " + penalty + " points !");
             return;
@@ -242,7 +237,7 @@ public class GangWarEvent extends ServerEvent {
 
         int finalPoints = (int) (basePoints * multiplier);
 
-        addPointsToPlayer(killer, killerGang, finalPoints, "kill PvP");
+        addPointsToPlayer(killer, killerGang, finalPoints);
 
         // Stats
         GangWarStats killerStats = playerStats.get(killer.getUniqueId());
@@ -269,7 +264,7 @@ public class GangWarEvent extends ServerEvent {
     /**
      * Ajoute des points à un joueur et son gang
      */
-    private void addPointsToPlayer(Player player, String gangName, int points, String reason) {
+    public void addPointsToPlayer(Player player, String gangName, int points) {
         if (points == 0) return;
 
         // Ajouter aux scores
@@ -286,7 +281,7 @@ public class GangWarEvent extends ServerEvent {
     }
 
     /**
-     * Système d'avant-postes (placeholder pour future implémentation)
+     * Système d'avant-postes
      */
     private void processOutpostControl() {
         // Cette méthode sera implémentée plus tard avec les hooks
@@ -340,7 +335,7 @@ public class GangWarEvent extends ServerEvent {
         List<Map.Entry<String, Integer>> sortedGangs = gangScores.entrySet().stream()
                 .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
                 .limit(5)
-                .collect(Collectors.toList());
+                .toList();
 
         if (sortedGangs.isEmpty()) {
             Bukkit.broadcastMessage("§7Aucun gang n'a encore marqué de points");
