@@ -23,38 +23,34 @@ public class MobSpawnListener implements Listener {
     }
 
     /**
-     * Annule le spawn naturel des monstres pour les remplacer par nos custom
+     * Annule le spawn naturel des monstres pour les remplacer par nos custom.
      */
     @EventHandler(priority = EventPriority.HIGH)
     public void onCreatureSpawn(CreatureSpawnEvent event) {
         Entity entity = event.getEntity();
 
-        // Autorise les spawns de nos monstres custom
+        // On autorise toujours le spawn de nos propres monstres.
         if (CustomMob.isCustomMob(entity)) {
             return;
         }
 
-        // Autorise les spawns par plugin/commande
+        // On autorise les spawns manuels (commandes, oeufs, etc.).
         if (event.getSpawnReason() == CreatureSpawnEvent.SpawnReason.CUSTOM ||
                 event.getSpawnReason() == CreatureSpawnEvent.SpawnReason.SPAWNER_EGG ||
                 event.getSpawnReason() == CreatureSpawnEvent.SpawnReason.DISPENSE_EGG) {
             return;
         }
 
-        // Bloque les spawns naturels des monstres hostiles
         if (entity instanceof Monster ||
                 entity instanceof Slime ||
                 entity instanceof Phantom ||
                 entity instanceof Witch) {
 
             event.setCancelled(true);
-            plugin.getLogger().fine("Spawn naturel bloqué: " + entity.getType() + " à " +
-                    event.getLocation().getBlockX() + ", " +
-                    event.getLocation().getBlockY() + ", " +
-                    event.getLocation().getBlockZ());
+
         }
 
-        // Retire certains mobs non-hostiles inutiles selon la config
+        // Retire certains mobs passifs inutiles selon la config.
         if (plugin.getConfig().getBoolean("remove-useless-mobs", true)) {
             if (entity instanceof Bat ||
                     entity instanceof Squid ||

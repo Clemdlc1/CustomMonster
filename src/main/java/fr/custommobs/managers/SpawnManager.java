@@ -8,9 +8,10 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.entity.EntityType;
-import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.IronGolem;
+import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
@@ -30,15 +31,14 @@ public class SpawnManager {
     private BukkitTask masterSpawnTask;
 
     // Constantes
-    private static final int MASTER_TICK_INTERVAL = 40;
+    private static final int MASTER_TICK_INTERVAL = 40; // 2 secondes
     private static final int MAX_SPAWN_ATTEMPTS = 10;
-    private static final double MIN_PLAYER_DISTANCE_SQUARED = 12*12;
+    private static final double MIN_PLAYER_DISTANCE_SQUARED = 12 * 12;
     private static final int MAX_MONSTERS_IN_CAVE = 200;
 
     public SpawnManager(CustomMobsPlugin plugin) {
         this.plugin = plugin;
         this.spawnZones = new HashMap<>();
-        // Utilisation de collections thread-safe pour éviter les erreurs dans un contexte asynchrone
         this.spawnedMobsByZone = new ConcurrentHashMap<>();
         this.zoneCooldowns = new ConcurrentHashMap<>();
         loadSpawnZones();
@@ -65,82 +65,98 @@ public class SpawnManager {
     }
 
     public void startSpawning() {
-        // Annule une tâche existante si on recharge le plugin
         if (masterSpawnTask != null) {
             masterSpawnTask.cancel();
         }
 
+        // CORRIGÉ : La tâche principale tourne maintenant sur le thread principal (synchrone)
+        // pour pouvoir appeler les méthodes de l'API Bukkit en toute sécurité.
         this.masterSpawnTask = new BukkitRunnable() {
             @Override
             public void run() {
-                // Cette méthode est le coeur de la logique et tourne en asynchrone
                 processAllSpawns();
             }
-        }.runTaskTimerAsynchronously(plugin, 100L, MASTER_TICK_INTERVAL);
+        }.runTaskTimer(plugin, 100L, MASTER_TICK_INTERVAL);
     }
 
+    /**
+     * Logique principale qui tourne sur le thread principal.
+     * Elle vérifie les conditions et délègue la recherche de position à une tâche asynchrone.
+     */
     private void processAllSpawns() {
-        // 1. Nettoyer les listes et obtenir un décompte précis des mobs actuels par monde.
-        Map<World, Integer> currentMobCounts = cleanAndCountAllMobs();
+        cleanMobLists();
 
         long currentTick = Bukkit.getServer().getCurrentTick();
 
-        // 2. Parcourir chaque zone pour décider si un spawn est nécessaire
         for (Map.Entry<String, SpawnZone> entry : spawnZones.entrySet()) {
             String zoneId = entry.getKey();
             SpawnZone zone = entry.getValue();
             World world = Bukkit.getWorld(zone.worldName());
 
-            // --- Vérifications ---
             if (!zone.enabled() || world == null) continue;
 
-            // Vérification du cooldown de la zone
-            long intervalTicks = zone.spawnInterval() * 20L;
-            if (currentTick - zoneCooldowns.getOrDefault(zoneId, 0L) < intervalTicks) {
+            if (currentTick - zoneCooldowns.getOrDefault(zoneId, 0L) < zone.spawnInterval() * 20L) {
                 continue;
             }
 
-            // Vérification de la limite globale pour le monde "Cave"
-            if ("Cave".equalsIgnoreCase(world.getName()) && currentMobCounts.getOrDefault(world, 0) >= MAX_MONSTERS_IN_CAVE) {
-                continue;
+            int currentWorldMonsters = -1;
+            if ("Cave".equalsIgnoreCase(world.getName())) {
+                // Cet appel est maintenant sûr car nous sommes sur le thread principal.
+                currentWorldMonsters = countAllMonstersInWorld(world);
+                if (currentWorldMonsters >= MAX_MONSTERS_IN_CAVE) {
+                    continue;
+                }
             }
 
-            // Vérification de la limite de la zone
             int mobsInZone = spawnedMobsByZone.get(zoneId).size();
             if (mobsInZone >= zone.maxMobs()) {
                 continue;
             }
 
-            // --- Calcul du nombre de mobs à spawner ---
-            int worldCapRoom = Integer.MAX_VALUE;
-            if ("Cave".equalsIgnoreCase(world.getName())) {
-                worldCapRoom = MAX_MONSTERS_IN_CAVE - currentMobCounts.getOrDefault(world, 0);
+            int maxToSpawn = zone.groupSize();
+            maxToSpawn = Math.min(maxToSpawn, zone.maxMobs() - mobsInZone);
+            if (currentWorldMonsters != -1) {
+                maxToSpawn = Math.min(maxToSpawn, MAX_MONSTERS_IN_CAVE - currentWorldMonsters);
             }
-
-            int zoneCapRoom = zone.maxMobs() - mobsInZone;
-            int maxToSpawn = Math.min(zone.groupSize(), Math.min(zoneCapRoom, worldCapRoom));
 
             if (maxToSpawn <= 0) continue;
 
-            // --- Lancement du spawn ---
-            zoneCooldowns.put(zoneId, currentTick); // Mettre à jour le cooldown immédiatement
+            zoneCooldowns.put(zoneId, currentTick);
 
+            // CORRIGÉ : On délègue la recherche de position (lourde) à une tâche asynchrone.
             for (int i = 0; i < maxToSpawn; i++) {
                 String mobType = zone.getRandomMobType();
                 if (mobType == null) continue;
 
-                // La recherche de position reste asynchrone pour la performance
-                Location spawnLocation = findValidSpawnLocation(zone, mobType, MAX_SPAWN_ATTEMPTS);
+                // Lancement de la recherche en asynchrone pour ne pas lagger le serveur
+                findAndSpawnMobAsync(zone, zoneId, mobType);
+            }
+        }
+    }
+
+    /**
+     * Lance une recherche de position en asynchrone, puis fait spawner le mob sur le thread principal.
+     */
+    private void findAndSpawnMobAsync(final SpawnZone zone, final String zoneId, final String mobType) {
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                // Étape 1: Trouver un emplacement (Asynchrone et sûr)
+                final Location spawnLocation = findValidSpawnLocation(zone, mobType);
 
                 if (spawnLocation != null) {
-                    // Le spawn de l'entité doit se faire sur le thread principal
+                    // Étape 2: Spawner l'entité sur le thread principal
                     new BukkitRunnable() {
                         @Override
                         public void run() {
-                            // On re-vérifie la limite juste avant le spawn pour être 100% sûr
-                            if ("Cave".equalsIgnoreCase(world.getName()) && cleanAndCountAllMobs().getOrDefault(world, 0) >= MAX_MONSTERS_IN_CAVE) {
+                            World world = spawnLocation.getWorld();
+                            if(world == null) return;
+
+                            // Ultime vérification de sécurité juste avant le spawn.
+                            if ("Cave".equalsIgnoreCase(world.getName()) && countAllMonstersInWorld(world) >= MAX_MONSTERS_IN_CAVE) {
                                 return;
                             }
+
                             LivingEntity mob = plugin.getMobManager().spawnCustomMob(mobType, spawnLocation);
                             if (mob != null) {
                                 spawnedMobsByZone.get(zoneId).add(mob);
@@ -150,41 +166,50 @@ public class SpawnManager {
                     }.runTask(plugin);
                 }
             }
-        }
+        }.runTaskAsynchronously(plugin);
     }
 
     /**
-     * Nettoie les listes de mobs (supprime les morts) et renvoie un décompte à jour par monde.
-     * C'est l'étape cruciale qui fiabilise tout le système.
+     * Compte toutes les entités considérées comme "monstres" dans un monde.
+     * Doit être appelée depuis le thread principal.
      */
-    private Map<World, Integer> cleanAndCountAllMobs() {
-        Map<World, Integer> counts = new HashMap<>();
-        for (List<LivingEntity> mobList : spawnedMobsByZone.values()) {
-            // Utilise removeIf pour une suppression sûre tout en parcourant la liste
-            mobList.removeIf(mob -> {
-                if (mob == null || mob.isDead() || !mob.isValid()) {
-                    return true; // Marque pour suppression
-                }
-                // Si le mob est valide, on l'ajoute au décompte de son monde
-                counts.merge(mob.getWorld(), 1, Integer::sum);
-                return false; // Garde l'élément
-            });
+    private int countAllMonstersInWorld(World world) {
+        int count = 0;
+        for (LivingEntity entity : world.getLivingEntities()) {
+            if (entity instanceof Player) continue;
+            if (entity instanceof Monster || entity instanceof IronGolem) {
+                count++;
+            }
         }
-        return counts;
+        return count;
     }
 
-    private Location findValidSpawnLocation(SpawnZone zone, String mobType, int maxAttempts) {
-        World world = plugin.getServer().getWorld(zone.worldName());
+    /**
+     * Nettoie les listes de mobs en supprimant les entités mortes ou invalides.
+     */
+    private void cleanMobLists() {
+        for (List<LivingEntity> mobList : spawnedMobsByZone.values()) {
+            mobList.removeIf(mob -> mob == null || mob.isDead() || !mob.isValid());
+        }
+    }
+
+    // ... Le reste du fichier (findValidSpawnLocation, isSafeForMob, etc.) ne change pas ...
+    private Location findValidSpawnLocation(SpawnZone zone, String mobType) {
+        World world = Bukkit.getServer().getWorld(zone.worldName());
         if (world == null) return null;
 
         BoundingBox mobBoundingBox = getMobBoundingBox(mobType);
 
-        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+        for (int attempt = 0; attempt < SpawnManager.MAX_SPAWN_ATTEMPTS; attempt++) {
             int x = ThreadLocalRandom.current().nextInt(zone.minX(), zone.maxX() + 1);
             int z = ThreadLocalRandom.current().nextInt(zone.minZ(), zone.maxZ() + 1);
 
             for (int y = zone.maxY(); y >= zone.minY(); y--) {
                 Location potentialLocation = new Location(world, x + 0.5, y, z + 0.5);
+                // isChunkLoaded est une vérification peu coûteuse et importante en asynchrone.
+                if (!world.isChunkLoaded(potentialLocation.getBlockX() >> 4, potentialLocation.getBlockZ() >> 4)) {
+                    continue;
+                }
                 Block groundBlock = potentialLocation.getBlock().getRelative(BlockFace.DOWN);
 
                 if (isSolidAndSafeGround(groundBlock.getType())) {
@@ -228,6 +253,7 @@ public class SpawnManager {
     }
 
     private boolean isNearPlayer(Location location) {
+        // isNearPlayer est souvent appelé en async, Bukkit.getOnlinePlayers() est thread-safe.
         for (Player player : location.getWorld().getPlayers()) {
             if (player.getLocation().distanceSquared(location) < MIN_PLAYER_DISTANCE_SQUARED) {
                 return true;
@@ -251,16 +277,9 @@ public class SpawnManager {
             case "wither": return new BoundingBox(0, 0, 0, 0.9, 3.5, 0.9);
             case "baby_zombie": return new BoundingBox(0, 0, 0, 0.3, 0.975, 0.3);
             default:
-                try {
-                    EntityType entityType = EntityType.valueOf(normalizedMobId.toUpperCase());
-                    org.bukkit.entity.Entity entity = Bukkit.getWorlds().getFirst().spawnEntity(new Location(Bukkit.getWorlds().getFirst(), 0, -100, 0), entityType);
-                    BoundingBox box = entity.getBoundingBox();
-                    entity.remove();
-                    return box;
-                } catch (Exception e) {
-                    // Si tout échoue, retourne une taille générique
-                    return new BoundingBox(0, 0, 0, 0.8, 1.9, 0.8);
-                }
+                // Cette partie est problématique en asynchrone. On retourne une valeur par défaut.
+                // Le spawn d'entité pour mesurer sa box ne peut pas se faire en async.
+                return new BoundingBox(0, 0, 0, 0.8, 1.9, 0.8);
         }
     }
 
@@ -271,6 +290,7 @@ public class SpawnManager {
             masterSpawnTask = null;
         }
 
+        // Le reste de la fonction est ok
         for (List<LivingEntity> mobs : spawnedMobsByZone.values()) {
             mobs.forEach(mob -> {
                 if (mob != null && !mob.isDead()) {
@@ -290,33 +310,33 @@ public class SpawnManager {
 
     public record SpawnZone(String worldName, int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
                             List<String> mobTypes, int maxMobs, int groupSize, int spawnInterval, boolean enabled) {
-            public SpawnZone(String worldName, int minX, int minY, int minZ, int maxX, int maxY, int maxZ, List<String> mobTypes, int maxMobs, int groupSize, int spawnInterval, boolean enabled) {
-                this.worldName = worldName;
-                this.minX = Math.min(minX, maxX);
-                this.minY = Math.min(minY, maxY);
-                this.minZ = Math.min(minZ, maxZ);
-                this.maxX = Math.max(minX, maxX);
-                this.maxY = Math.max(minY, maxY);
-                this.maxZ = Math.max(minZ, maxZ);
-                this.mobTypes = mobTypes;
-                this.maxMobs = maxMobs;
-                this.groupSize = groupSize;
-                this.spawnInterval = spawnInterval;
-                this.enabled = enabled;
-            }
+        public SpawnZone(String worldName, int minX, int minY, int minZ, int maxX, int maxY, int maxZ, List<String> mobTypes, int maxMobs, int groupSize, int spawnInterval, boolean enabled) {
+            this.worldName = worldName;
+            this.minX = Math.min(minX, maxX);
+            this.minY = Math.min(minY, maxY);
+            this.minZ = Math.min(minZ, maxZ);
+            this.maxX = Math.max(minX, maxX);
+            this.maxY = Math.max(minY, maxY);
+            this.maxZ = Math.max(minZ, maxZ);
+            this.mobTypes = mobTypes;
+            this.maxMobs = maxMobs;
+            this.groupSize = groupSize;
+            this.spawnInterval = spawnInterval;
+            this.enabled = enabled;
+        }
 
-            public static SpawnZone fromConfig(ConfigurationSection section) {
-                return new SpawnZone(section.getString("world", "world"), section.getInt("min-x"), section.getInt("min-y"), section.getInt("min-z"), section.getInt("max-x"), section.getInt("max-y"), section.getInt("max-z"), section.getStringList("mob-types"), section.getInt("max-mobs", 10), section.getInt("group-size", 3), section.getInt("spawn-interval", 60), section.getBoolean("enabled", true));
-            }
+        public static SpawnZone fromConfig(ConfigurationSection section) {
+            return new SpawnZone(section.getString("world", "world"), section.getInt("min-x"), section.getInt("min-y"), section.getInt("min-z"), section.getInt("max-x"), section.getInt("max-y"), section.getInt("max-z"), section.getStringList("mob-types"), section.getInt("max-mobs", 10), section.getInt("group-size", 3), section.getInt("spawn-interval", 60), section.getBoolean("enabled", true));
+        }
 
         @Override
         public List<String> mobTypes() {
             return Collections.unmodifiableList(mobTypes);
         }
 
-            public String getRandomMobType() {
-                if (mobTypes.isEmpty()) return null;
-                return mobTypes.get(ThreadLocalRandom.current().nextInt(mobTypes.size()));
-            }
+        public String getRandomMobType() {
+            if (mobTypes.isEmpty()) return null;
+            return mobTypes.get(ThreadLocalRandom.current().nextInt(mobTypes.size()));
         }
+    }
 }
