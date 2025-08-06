@@ -89,14 +89,6 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- Annotations for better code -->
-        <dependency>
-            <groupId>org.jetbrains</groupId>
-            <artifactId>annotations</artifactId>
-            <version>24.1.0</version>
-            <scope>provided</scope>
-        </dependency>
-
         <dependency>
             <groupId>fr.prisontycoon</groupId> <!-- Doit correspondre au groupId de PrisonTycoon -->
             <artifactId>PrisonTycoon</artifactId> <!-- Doit correspondre à l'artifactId de PrisonTycoon -->
