@@ -5,7 +5,6 @@ import fr.custommobs.mobs.CustomMob;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Enderman;
-import org.bukkit.entity.IronGolem;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.metadata.FixedMetadataValue;

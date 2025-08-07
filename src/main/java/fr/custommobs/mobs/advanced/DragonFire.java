@@ -4,8 +4,6 @@ import fr.custommobs.CustomMobsPlugin;
 import fr.custommobs.mobs.CustomMob;
 import org.bukkit.*;
 import org.bukkit.entity.*;
-import org.bukkit.potion.PotionEffect;
-import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 

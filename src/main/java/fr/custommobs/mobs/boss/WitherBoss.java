@@ -177,7 +177,7 @@ public class WitherBoss extends CustomMob {
         // Phase dévastatrice - attaques coordonnées
         long apocalypseCD = Math.max(45000, 60000 - (players.size() * 3000));
 
-        if (currentTime - lastApocalypse > apocalypseCD && players.size() > 0) {
+        if (currentTime - lastApocalypse > apocalypseCD && !players.isEmpty()) {
             necroticApocalypseMultiplayer(players);
         } else if (currentTime - lastSoulDrain > 12000) {
             soulDrainOmnipresent(players);
@@ -294,7 +294,7 @@ public class WitherBoss extends CustomMob {
                 .filter(p -> !p.equals(primaryTarget))
                 .collect(Collectors.toList());
 
-        if (secondaryTargets.size() >= 1) {
+        if (!secondaryTargets.isEmpty()) {
             Player secondary = secondaryTargets.get(random.nextInt(secondaryTargets.size()));
 
             if (Math.random() < 0.6) {

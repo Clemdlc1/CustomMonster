@@ -264,23 +264,23 @@ public class SpawnManager {
 
     private BoundingBox getMobBoundingBox(String mobId) {
         String normalizedMobId = mobId.toLowerCase().trim();
-        switch (normalizedMobId) {
-            case "zombie": case "witch": case "evoker": return new BoundingBox(0, 0, 0, 0.6, 1.95, 0.6);
-            case "skeleton": return new BoundingBox(0, 0, 0, 0.6, 1.99, 0.6);
-            case "creeper": return new BoundingBox(0, 0, 0, 0.6, 1.7, 0.6);
-            case "enderman": return new BoundingBox(0, 0, 0, 0.6, 2.9, 0.6);
-            case "spider": return new BoundingBox(0, 0, 0, 1.4, 0.9, 1.4);
-            case "blaze": return new BoundingBox(0, 0, 0, 0.6, 1.8, 0.6);
-            case "ravager": return new BoundingBox(0, 0, 0, 1.95, 2.2, 1.95);
-            case "iron_golem": return new BoundingBox(0, 0, 0, 1.4, 2.7, 1.4);
-            case "shulker": return new BoundingBox(0, 0, 0, 1.0, 1.0, 1.0);
-            case "wither": return new BoundingBox(0, 0, 0, 0.9, 3.5, 0.9);
-            case "baby_zombie": return new BoundingBox(0, 0, 0, 0.3, 0.975, 0.3);
-            default:
+        return switch (normalizedMobId) {
+            case "zombie", "witch", "evoker" -> new BoundingBox(0, 0, 0, 0.6, 1.95, 0.6);
+            case "skeleton" -> new BoundingBox(0, 0, 0, 0.6, 1.99, 0.6);
+            case "creeper" -> new BoundingBox(0, 0, 0, 0.6, 1.7, 0.6);
+            case "enderman" -> new BoundingBox(0, 0, 0, 0.6, 2.9, 0.6);
+            case "spider" -> new BoundingBox(0, 0, 0, 1.4, 0.9, 1.4);
+            case "blaze" -> new BoundingBox(0, 0, 0, 0.6, 1.8, 0.6);
+            case "ravager" -> new BoundingBox(0, 0, 0, 1.95, 2.2, 1.95);
+            case "iron_golem" -> new BoundingBox(0, 0, 0, 1.4, 2.7, 1.4);
+            case "shulker" -> new BoundingBox(0, 0, 0, 1.0, 1.0, 1.0);
+            case "wither" -> new BoundingBox(0, 0, 0, 0.9, 3.5, 0.9);
+            case "baby_zombie" -> new BoundingBox(0, 0, 0, 0.3, 0.975, 0.3);
+            default ->
                 // Cette partie est problématique en asynchrone. On retourne une valeur par défaut.
                 // Le spawn d'entité pour mesurer sa box ne peut pas se faire en async.
-                return new BoundingBox(0, 0, 0, 0.8, 1.9, 0.8);
-        }
+                    new BoundingBox(0, 0, 0, 0.8, 1.9, 0.8);
+        };
     }
 
 

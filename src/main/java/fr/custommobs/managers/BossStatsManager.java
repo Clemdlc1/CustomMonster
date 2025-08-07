@@ -2,14 +2,9 @@ package fr.custommobs.managers;
 
 import fr.custommobs.CustomMobsPlugin;
 import fr.custommobs.mobs.CustomMob;
-import fr.custommobs.events.types.DailyBossEvent;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.Material;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.*;

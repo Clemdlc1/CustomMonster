@@ -9,7 +9,6 @@ import org.bukkit.Sound;
 import org.bukkit.block.Block;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Skeleton;
 import org.bukkit.entity.Spider;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
