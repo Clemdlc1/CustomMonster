@@ -25,9 +25,25 @@ public class MobSpawnListener implements Listener {
     /**
      * Annule le spawn naturel des monstres pour les remplacer par nos custom.
      */
-    @EventHandler(priority = EventPriority.HIGH)
+    @EventHandler(priority = EventPriority.HIGHEST)
     public void onCreatureSpawn(CreatureSpawnEvent event) {
         Entity entity = event.getEntity();
+
+        // Limite globale de sécurité: max 200 Monster/IronGolem dans le monde "Cave".
+        if (entity.getWorld() != null && "Cave".equalsIgnoreCase(entity.getWorld().getName()) &&
+                (entity instanceof Monster || entity instanceof IronGolem)) {
+            int count = 0;
+            for (LivingEntity e : entity.getWorld().getLivingEntities()) {
+                if (e instanceof Player) continue;
+                if (e instanceof Monster || e instanceof IronGolem) {
+                    count++;
+                }
+            }
+            if (count >= 200) {
+                event.setCancelled(true);
+                return;
+            }
+        }
 
         // On autorise toujours le spawn de nos propres monstres.
         if (CustomMob.isCustomMob(entity)) {
