@@ -42,6 +42,9 @@ public final class CustomMobsPlugin extends JavaPlugin {
         // Initialise les managers
         initializeManagers();
 
+        // Initialise le compteur Cave après chargement des mondes
+        CaveMobCounter.initialize(this);
+
         // Enregistre les monstres
         registerMobs();
 

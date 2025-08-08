@@ -2,6 +2,7 @@ package fr.custommobs.listeners;
 
 import fr.custommobs.CustomMobsPlugin;
 import fr.custommobs.mobs.CustomMob;
+import fr.custommobs.managers.CaveMobCounter;
 import org.bukkit.Location;
 import org.bukkit.Sound;
 import org.bukkit.Particle;
@@ -20,30 +21,26 @@ public class MobSpawnListener implements Listener {
 
     public MobSpawnListener(CustomMobsPlugin plugin) {
         this.plugin = plugin;
+        CaveMobCounter.initialize(plugin);
+    }
+
+    /**
+     * Garde-fou: bloque au plus tôt si le plafond Cave est atteint (O(1)).
+     */
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onCreatureSpawnPre(CreatureSpawnEvent event) {
+        LivingEntity entity = event.getEntity();
+        if (CaveMobCounter.shouldBlockSpawn(entity)) {
+            event.setCancelled(true);
+        }
     }
 
     /**
      * Annule le spawn naturel des monstres pour les remplacer par nos custom.
      */
-    @EventHandler(priority = EventPriority.HIGHEST)
+    @EventHandler(priority = EventPriority.HIGH)
     public void onCreatureSpawn(CreatureSpawnEvent event) {
         Entity entity = event.getEntity();
-
-        // Limite globale de sécurité: max 200 Monster/IronGolem dans le monde "Cave".
-        if (entity.getWorld() != null && "Cave".equalsIgnoreCase(entity.getWorld().getName()) &&
-                (entity instanceof Monster || entity instanceof IronGolem)) {
-            int count = 0;
-            for (LivingEntity e : entity.getWorld().getLivingEntities()) {
-                if (e instanceof Player) continue;
-                if (e instanceof Monster || e instanceof IronGolem) {
-                    count++;
-                }
-            }
-            if (count >= 200) {
-                event.setCancelled(true);
-                return;
-            }
-        }
 
         // On autorise toujours le spawn de nos propres monstres.
         if (CustomMob.isCustomMob(entity)) {
@@ -77,11 +74,21 @@ public class MobSpawnListener implements Listener {
     }
 
     /**
-     * Gère la mort des monstres custom pour les loots
+     * Incrément final après validation du spawn (évite les incohérences si d'autres plugins annulent).
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onCreatureSpawnPost(CreatureSpawnEvent event) {
+        LivingEntity entity = event.getEntity();
+        CaveMobCounter.onSuccessfulSpawn(entity, plugin);
+    }
+
+    /**
+     * Gère la mort des monstres custom pour les loots et décrémente le compteur si besoin.
      */
     @EventHandler(priority = EventPriority.HIGH)
     public void onEntityDeath(EntityDeathEvent event) {
         LivingEntity entity = event.getEntity();
+        CaveMobCounter.onEntityRemoved(entity);
         if (entity instanceof Player) {
             return;
         }
