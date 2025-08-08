@@ -2,6 +2,7 @@ package fr.custommobs.listeners;
 
 import fr.custommobs.CustomMobsPlugin;
 import fr.custommobs.mobs.CustomMob;
+import fr.custommobs.managers.CaveMobCounter;
 import org.bukkit.Location;
 import org.bukkit.Sound;
 import org.bukkit.Particle;
@@ -20,6 +21,18 @@ public class MobSpawnListener implements Listener {
 
     public MobSpawnListener(CustomMobsPlugin plugin) {
         this.plugin = plugin;
+        CaveMobCounter.initialize(plugin);
+    }
+
+    /**
+     * Garde-fou: bloque au plus tôt si le plafond Cave est atteint (O(1)).
+     */
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onCreatureSpawnPre(CreatureSpawnEvent event) {
+        LivingEntity entity = event.getEntity();
+        if (CaveMobCounter.shouldBlockSpawn(entity)) {
+            event.setCancelled(true);
+        }
     }
 
     /**
@@ -61,11 +74,21 @@ public class MobSpawnListener implements Listener {
     }
 
     /**
-     * Gère la mort des monstres custom pour les loots
+     * Incrément final après validation du spawn (évite les incohérences si d'autres plugins annulent).
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onCreatureSpawnPost(CreatureSpawnEvent event) {
+        LivingEntity entity = event.getEntity();
+        CaveMobCounter.onSuccessfulSpawn(entity, plugin);
+    }
+
+    /**
+     * Gère la mort des monstres custom pour les loots et décrémente le compteur si besoin.
      */
     @EventHandler(priority = EventPriority.HIGH)
     public void onEntityDeath(EntityDeathEvent event) {
         LivingEntity entity = event.getEntity();
+        CaveMobCounter.onEntityRemoved(entity);
         if (entity instanceof Player) {
             return;
         }

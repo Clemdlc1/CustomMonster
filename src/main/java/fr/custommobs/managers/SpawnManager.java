@@ -12,6 +12,7 @@ import org.bukkit.entity.IronGolem;
 import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.LivingEntity;
+import fr.custommobs.managers.CaveMobCounter;
 import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
@@ -101,8 +102,7 @@ public class SpawnManager {
 
             int currentWorldMonsters = -1;
             if ("Cave".equalsIgnoreCase(world.getName())) {
-                // Cet appel est maintenant sûr car nous sommes sur le thread principal.
-                currentWorldMonsters = countAllMonstersInWorld(world);
+                currentWorldMonsters = CaveMobCounter.getCurrentCount(world);
                 if (currentWorldMonsters >= MAX_MONSTERS_IN_CAVE) {
                     continue;
                 }
@@ -153,7 +153,7 @@ public class SpawnManager {
                             if(world == null) return;
 
                             // Ultime vérification de sécurité juste avant le spawn.
-                            if ("Cave".equalsIgnoreCase(world.getName()) && countAllMonstersInWorld(world) >= MAX_MONSTERS_IN_CAVE) {
+                            if ("Cave".equalsIgnoreCase(world.getName()) && CaveMobCounter.getCurrentCount(world) >= MAX_MONSTERS_IN_CAVE) {
                                 return;
                             }
 
@@ -174,6 +174,10 @@ public class SpawnManager {
      * Doit être appelée depuis le thread principal.
      */
     private int countAllMonstersInWorld(World world) {
+        int caveCount = CaveMobCounter.getCurrentCount(world);
+        if (caveCount >= 0) {
+            return caveCount;
+        }
         int count = 0;
         for (LivingEntity entity : world.getLivingEntities()) {
             if (entity instanceof Player) continue;
@@ -294,6 +298,7 @@ public class SpawnManager {
         for (List<LivingEntity> mobs : spawnedMobsByZone.values()) {
             mobs.forEach(mob -> {
                 if (mob != null && !mob.isDead()) {
+                    CaveMobCounter.onEntityRemoved(mob);
                     mob.remove();
                 }
             });
