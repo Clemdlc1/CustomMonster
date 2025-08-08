@@ -35,6 +35,7 @@ public class SpawnManager {
     private static final int MAX_SPAWN_ATTEMPTS = 10;
     private static final double MIN_PLAYER_DISTANCE_SQUARED = 12 * 12;
     private static final int MAX_MONSTERS_IN_CAVE = 200;
+    private static final int MAX_CLEANUP_PER_TICK = 40; // Nettoyage progressif quand aucune présence joueur
 
     public SpawnManager(CustomMobsPlugin plugin) {
         this.plugin = plugin;
@@ -88,6 +89,9 @@ public class SpawnManager {
 
         long currentTick = Bukkit.getServer().getCurrentTick();
 
+        Integer caveMonstersCached = null; // cache pour cette passe
+        boolean caveCleanupDoneThisTick = false;
+
         for (Map.Entry<String, SpawnZone> entry : spawnZones.entrySet()) {
             String zoneId = entry.getKey();
             SpawnZone zone = entry.getValue();
@@ -99,11 +103,22 @@ public class SpawnManager {
                 continue;
             }
 
-            int currentWorldMonsters = -1;
-            if ("Cave".equalsIgnoreCase(world.getName())) {
-                // Cet appel est maintenant sûr car nous sommes sur le thread principal.
-                currentWorldMonsters = countAllMonstersInWorld(world);
-                if (currentWorldMonsters >= MAX_MONSTERS_IN_CAVE) {
+            boolean isCave = "Cave".equalsIgnoreCase(world.getName());
+            if (isCave) {
+                // 1) Si aucun joueur dans Cave: on stoppe tout spawn et on nettoie progressivement
+                if (!hasPlayersInWorld(world)) {
+                    if (!caveCleanupDoneThisTick) {
+                        cleanupWorldCreatures(world, MAX_CLEANUP_PER_TICK);
+                        caveCleanupDoneThisTick = true;
+                    }
+                    continue;
+                }
+
+                // 2) On calcule une seule fois le nombre de monstres de Cave pour cette passe
+                if (caveMonstersCached == null) {
+                    caveMonstersCached = countAllMonstersInWorld(world);
+                }
+                if (caveMonstersCached >= MAX_MONSTERS_IN_CAVE) {
                     continue;
                 }
             }
@@ -115,21 +130,28 @@ public class SpawnManager {
 
             int maxToSpawn = zone.groupSize();
             maxToSpawn = Math.min(maxToSpawn, zone.maxMobs() - mobsInZone);
-            if (currentWorldMonsters != -1) {
-                maxToSpawn = Math.min(maxToSpawn, MAX_MONSTERS_IN_CAVE - currentWorldMonsters);
+
+            if (isCave && caveMonstersCached != null) {
+                int remainingAllowed = Math.max(0, MAX_MONSTERS_IN_CAVE - caveMonstersCached);
+                if (remainingAllowed <= 0) {
+                    continue;
+                }
+                maxToSpawn = Math.min(maxToSpawn, remainingAllowed);
             }
 
             if (maxToSpawn <= 0) continue;
 
             zoneCooldowns.put(zoneId, currentTick);
 
-            // CORRIGÉ : On délègue la recherche de position (lourde) à une tâche asynchrone.
             for (int i = 0; i < maxToSpawn; i++) {
                 String mobType = zone.getRandomMobType();
                 if (mobType == null) continue;
-
-                // Lancement de la recherche en asynchrone pour ne pas lagger le serveur
                 findAndSpawnMobAsync(zone, zoneId, mobType);
+            }
+
+            // Met à jour le cache pour éviter le sur-scheduling entre zones dans Cave
+            if (isCave && caveMonstersCached != null) {
+                caveMonstersCached += maxToSpawn;
             }
         }
     }
@@ -152,9 +174,15 @@ public class SpawnManager {
                             World world = spawnLocation.getWorld();
                             if(world == null) return;
 
-                            // Ultime vérification de sécurité juste avant le spawn.
-                            if ("Cave".equalsIgnoreCase(world.getName()) && countAllMonstersInWorld(world) >= MAX_MONSTERS_IN_CAVE) {
-                                return;
+                            // Ultime vérification juste avant le spawn.
+                            if ("Cave".equalsIgnoreCase(world.getName())) {
+                                // Ne pas spawn s'il n'y a aucun joueur
+                                if (!hasPlayersInWorld(world)) {
+                                    return;
+                                }
+                                if (countAllMonstersInWorld(world) >= MAX_MONSTERS_IN_CAVE) {
+                                    return;
+                                }
                             }
 
                             LivingEntity mob = plugin.getMobManager().spawnCustomMob(mobType, spawnLocation);
@@ -182,6 +210,31 @@ public class SpawnManager {
             }
         }
         return count;
+    }
+
+    /**
+     * Retourne vrai s'il y a au moins un joueur présent dans le monde donné.
+     */
+    private boolean hasPlayersInWorld(World world) {
+        return !world.getPlayers().isEmpty();
+    }
+
+    /**
+     * Supprime progressivement jusqu'à "limit" créatures (monstres + IronGolem) dans ce monde.
+     * Doit être appelée sur le thread principal.
+     */
+    private void cleanupWorldCreatures(World world, int limit) {
+        int removed = 0;
+        for (LivingEntity entity : world.getLivingEntities()) {
+            if (entity instanceof Player) continue;
+            if (entity instanceof Monster || entity instanceof IronGolem) {
+                entity.remove();
+                removed++;
+                if (removed >= limit) {
+                    break;
+                }
+            }
+        }
     }
 
     /**
