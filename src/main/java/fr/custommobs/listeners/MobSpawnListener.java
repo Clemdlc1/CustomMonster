@@ -24,17 +24,42 @@ public class MobSpawnListener implements Listener {
 
     /**
      * Annule le spawn naturel des monstres pour les remplacer par nos custom.
+     * Applique aussi une limite stricte dans le monde "Cave" (monstres + IronGolem <= 200) et
+     * annule tout spawn si aucun joueur n'est présent dans ce monde.
      */
     @EventHandler(priority = EventPriority.HIGH)
     public void onCreatureSpawn(CreatureSpawnEvent event) {
         Entity entity = event.getEntity();
 
-        // On autorise toujours le spawn de nos propres monstres.
+        // Contrôle prioritaire pour le monde "Cave"
+        if (entity.getWorld() != null && "Cave".equalsIgnoreCase(entity.getWorld().getName())) {
+            // Si pas de joueurs dans la Cave: annule tous les spawns
+            if (entity.getWorld().getPlayers().isEmpty()) {
+                event.setCancelled(true);
+                return;
+            }
+            // Applique la limite pour monstres + IronGolem
+            if (entity instanceof Monster || entity instanceof IronGolem) {
+                int count = 0;
+                for (LivingEntity e : entity.getWorld().getLivingEntities()) {
+                    if (e instanceof Player) continue;
+                    if (e instanceof Monster || e instanceof IronGolem) {
+                        count++;
+                        if (count >= 200) {
+                            event.setCancelled(true);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        // On autorise toujours le spawn de nos propres monstres si les contrôles Cave ci-dessus n'ont pas bloqué
         if (CustomMob.isCustomMob(entity)) {
             return;
         }
 
-        // On autorise les spawns manuels (commandes, oeufs, etc.).
+        // On autorise les spawns manuels (commandes, oeufs, etc.) si les contrôles Cave ci-dessus n'ont pas bloqué
         if (event.getSpawnReason() == CreatureSpawnEvent.SpawnReason.CUSTOM ||
                 event.getSpawnReason() == CreatureSpawnEvent.SpawnReason.SPAWNER_EGG ||
                 event.getSpawnReason() == CreatureSpawnEvent.SpawnReason.DISPENSE_EGG) {
