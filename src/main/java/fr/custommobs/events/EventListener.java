@@ -162,7 +162,7 @@ public class EventListener implements Listener {
     /**
      * Gère le chat pour les questions spontanées
      */
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.LOWEST)
     public void onPlayerChat(AsyncPlayerChatEvent event) {
         Player player = event.getPlayer();
         String message = event.getMessage();

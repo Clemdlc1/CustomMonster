@@ -423,6 +423,12 @@ public class DailyBossEvent extends ServerEvent {
                     prisonHook.addCoins(participant, (long) totalReward);
                     participant.sendMessage("§a§l[BOSS] §7Récompense totale: §a" + String.format("%.0f", totalReward) + "§7 pièces");
                 }
+                try {
+                    fr.prisontycoon.PrisonTycoon pt = fr.prisontycoon.PrisonTycoon.getInstance();
+                    if (pt != null) {
+                        pt.getQuestManager().addProgress(participant, fr.prisontycoon.quests.QuestType.PARTICIPATE_BOSS, 1);
+                    }
+                } catch (Throwable ignored) {}
             }
         }
     }

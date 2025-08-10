@@ -4,11 +4,15 @@ import fr.custommobs.CustomMobsPlugin;
 import fr.custommobs.api.PrisonTycoonHook;
 import fr.custommobs.events.EventListener;
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 
+import java.text.Normalizer;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.regex.Pattern;
 
 /**
  * Question Spontanée
@@ -58,7 +62,18 @@ public class SpontaneousQuestionEvent extends ServerEvent {
 
         String[] selectedQuestion = questions[ThreadLocalRandom.current().nextInt(questions.length)];
         this.question = selectedQuestion[0];
-        this.correctAnswer = selectedQuestion[1].toLowerCase();
+        this.correctAnswer = normalize(selectedQuestion[1]);
+    }
+
+    private static String normalize(String input) {
+        if (input == null) return "";
+        String s = ChatColor.stripColor(input);
+        s = s.replaceAll("(?i)&[0-9A-FK-ORX]", "");
+        s = s.replaceAll("§[0-9A-FK-ORX]", "");
+        s = Normalizer.normalize(s, Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
+        s = s.toLowerCase(Locale.ROOT);
+        s = s.replaceAll("[^a-z0-9]+", " ").trim();
+        return s;
     }
 
     /**
@@ -66,9 +81,11 @@ public class SpontaneousQuestionEvent extends ServerEvent {
      * La logique est exécutée sur le thread principal pour éviter les problèmes de concurrence.
      */
     public void onPlayerAnswer(Player player, String answer) {
-        if (answered || !answer.toLowerCase().contains(correctAnswer)) {
-            return;
-        }
+        if (answered) return;
+        String normalized = normalize(answer);
+        boolean match = Pattern.compile("\\b" + Pattern.quote(correctAnswer) + "\\b").matcher(normalized).find();
+        if (!match) return;
+
         new BukkitRunnable() {
             @Override
             public void run() {
@@ -91,6 +108,13 @@ public class SpontaneousQuestionEvent extends ServerEvent {
                 PrisonTycoonHook.EventReward reward = new PrisonTycoonHook.EventReward()
                         .addItem(prisonHook.createKey("legendary"));
                 prisonHook.giveEventReward(player, reward);
+
+                try {
+                    fr.prisontycoon.PrisonTycoon pt = fr.prisontycoon.PrisonTycoon.getInstance();
+                    if (pt != null) {
+                        pt.getQuestManager().addProgress(player, fr.prisontycoon.quests.QuestType.WIN_SPONTANEOUS_EVENT, 1);
+                    }
+                } catch (Throwable ignored) {}
 
                 // Terminer l'événement après un court délai
                 new BukkitRunnable() {
