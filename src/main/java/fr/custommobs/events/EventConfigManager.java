@@ -177,7 +177,6 @@ public class EventConfigManager {
         if (specificSection != null) {
             for (String category : specificSection.getKeys(false)) {
                 if (specificSection.isList(category)) {
-                    @SuppressWarnings("unchecked")
                     List<Map<?, ?>> locationsList = (List<Map<?, ?>>) specificSection.getMapList(category);
                     List<EventLocationConfig> locations = new ArrayList<>();
 
